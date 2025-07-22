@@ -8,9 +8,10 @@ class EmploymentCalculator:
         Initialize the employment calculator with comprehensive sector analysis capabilities.
         
         Classification Hierarchy:
-        - basic_sectors (기본부문): 397 detailed sectors (e.g., 2711: 선철)
-        - intermediate_sectors (중분류): Intermediate classification used for employment analysis 
-        - industry_sectors (대분류): Major industry groups (농림수산업, 제조업, 서비스업 등)
+        - basic_sectors (기본분류): 4-digit detailed sectors (e.g., 2711: 선철)  
+        - sub_sectors (소분류): 3-digit classification used by regional IO tables
+        - intermediate_sectors (중분류): 2-digit classification used for employment analysis
+        - industrial_sectors (대분류): 1-digit major industry groups
         
         Args:
             excel_file_path: Path to the 2020지역_부속표_고용표_통합중분류.xlsx file
@@ -30,16 +31,25 @@ class EmploymentCalculator:
         self.import_multipliers = None      # 수입유발계수
         self.value_added_multipliers = None # 부가가치유발계수
         
-        # Sector Classifications
-        self.basic_sectors = None       # 기본부문 (397 sectors)
-        self.intermediate_sectors = None # 중분류 (intermediate classification)
-        self.industry_sectors = None    # 대분류 (major industry groups)
+        # Regional multiplier file paths
+        self.multiplier_files = {
+            'production': 'iotable/2020지역_투입산출표_생산자가격_통합소분류_생산유발계수.xlsx',
+            'import': 'iotable/2020지역_투입산출표_생산자가격_통합소분류_수입유발계수.xlsx',
+            'value_added': 'iotable/2020지역_투입산출표_생산자가격_통합소분류_부가가치유발계수.xlsx'
+        }
+        
+        # Sector Classifications  
+        self.basic_sectors = None        # 기본분류 (4-digit sectors)
+        self.sub_sectors = None          # 소분류 (3-digit sectors)
+        self.intermediate_sectors = None # 중분류 (2-digit sectors)
+        self.industrial_sectors = None   # 대분류 (1-digit sectors)
         self.regions = None
         self.sector_hierarchy = None
         self._load_data()
         if basic_iotable_path:
             self._load_basic_iotable()
         self._load_sector_mapping()
+        self._load_regional_multipliers()
         self._build_sector_hierarchy()
     
     def _load_data(self):
@@ -183,95 +193,216 @@ class EmploymentCalculator:
             self.Ad_matrix = None
     
     def _load_sector_mapping(self):
-        """Load sector classification mapping from 2020_산업분류표.xlsx."""
+        """Load product/commodity classification mapping from (2020실측)상품분류.xlsx."""
         try:
-            # Load the classification mapping file
-            mapping_file = 'iotable/2020_산업분류표.xlsx'
+            # Load the product classification mapping file (not industry classification)
+            mapping_file = 'iotable/(2020실측)상품분류.xlsx'
             df = pd.read_excel(mapping_file, sheet_name='부문분류', header=2)
             
             # Set proper column names
-            df.columns = ['기본부문_코드', '기본부문_명', '소분류_코드', '소분류_명', 
+            df.columns = ['기본분류_코드', '기본분류_명', '소분류_코드', '소분류_명', 
                          '중분류_코드', '중분류_명', '대분류_코드', '대분류_명']
             
             # Remove empty rows
-            df = df.dropna(subset=['기본부문_코드'])
+            df = df.dropna(subset=['기본분류_코드'])
             
             # Forward fill to complete the hierarchical mapping
             for col in ['소분류_코드', '소분류_명', '중분류_코드', '중분류_명', '대분류_코드', '대분류_명']:
                 df[col] = df[col].ffill()
             
             # Create mapping dictionaries
-            self.basic_to_intermediate_map = {}
-            self.basic_to_industry_map = {}
+            self.basic_to_sub_map = {}           # 기본분류 -> 소분류
+            self.basic_to_intermediate_map = {}  # 기본분류 -> 중분류  
+            self.basic_to_industrial_map = {}    # 기본분류 -> 대분류
             
             for _, row in df.iterrows():
-                basic_code = str(row['기본부문_코드']).strip()
-                intermediate_code = row['중분류_코드']
-                intermediate_name = row['중분류_명']
-                industry_code = row['대분류_코드'] 
-                industry_name = row['대분류_명']
-                
-                # Create intermediate sector key (code: name format)
-                if pd.notna(intermediate_code) and pd.notna(intermediate_name):
-                    intermediate_key = f"{int(intermediate_code)}: {intermediate_name}"
-                    self.basic_to_intermediate_map[basic_code] = intermediate_key
-                
-                # Create industry sector key
-                if pd.notna(industry_code) and pd.notna(industry_name):
-                    self.basic_to_industry_map[basic_code] = industry_name
+                # Handle basic sector code with proper 4-digit formatting
+                basic_code_raw = row['기본분류_코드']
+                if pd.notna(basic_code_raw):
+                    try:
+                        # Ensure 4-digit format with leading zeros
+                        basic_code = f"{int(float(basic_code_raw)):04d}"
+                    except (ValueError, TypeError):
+                        # Skip non-numeric entries (like text headers)
+                        continue
+                    
+                    # Sub-sector mapping (소분류)
+                    sub_code = row['소분류_코드'] 
+                    sub_name = row['소분류_명']
+                    if pd.notna(sub_code) and pd.notna(sub_name):
+                        sub_key = f"{int(sub_code)}: {sub_name}"
+                        self.basic_to_sub_map[basic_code] = sub_key
+                    
+                    # Intermediate sector mapping (중분류)
+                    intermediate_code = row['중분류_코드']
+                    intermediate_name = row['중분류_명']
+                    if pd.notna(intermediate_code) and pd.notna(intermediate_name):
+                        intermediate_key = f"{int(intermediate_code)}: {intermediate_name}"
+                        self.basic_to_intermediate_map[basic_code] = intermediate_key
+                    
+                    # Industrial sector mapping (대분류)
+                    industrial_code = row['대분류_코드'] 
+                    industrial_name = row['대분류_명']
+                    if pd.notna(industrial_code) and pd.notna(industrial_name):
+                        self.basic_to_industrial_map[basic_code] = industrial_name
             
+            print(f"Loaded sector mapping: {len(self.basic_to_sub_map)} basic → sub")
             print(f"Loaded sector mapping: {len(self.basic_to_intermediate_map)} basic → intermediate")
-            print(f"Loaded sector mapping: {len(self.basic_to_industry_map)} basic → industry")
+            print(f"Loaded sector mapping: {len(self.basic_to_industrial_map)} basic → industrial")
+            
+            # Create reverse mappings and prefix mappings for flexible lookup
+            self._create_prefix_mappings(df)
             
         except Exception as e:
             print(f"Warning: Could not load sector mapping: {str(e)}")
+            self.basic_to_sub_map = {}
             self.basic_to_intermediate_map = {}
-            self.basic_to_industry_map = {}
+            self.basic_to_industrial_map = {}
     
-    def _load_multipliers(self):
-        """Load production, import, and value-added multipliers."""
-        # This will be implemented to load regional multiplier files
-        pass
+    def _create_prefix_mappings(self, classification_df):
+        """Create prefix-based mappings from classification data."""
+        # Create mapping from 2-digit prefix to intermediate classification
+        self.prefix_to_intermediate = {}
+        self.prefix_to_industrial = {}
+        
+        for _, row in classification_df.iterrows():
+            basic_code_raw = row['기본분류_코드']
+            if pd.notna(basic_code_raw):
+                try:
+                    # Ensure 4-digit format with leading zeros
+                    basic_code = f"{int(float(basic_code_raw)):04d}"
+                except (ValueError, TypeError):
+                    # Skip non-numeric entries
+                    continue
+                intermediate_code = row['중분류_코드']
+                intermediate_name = row['중분류_명']
+                industrial_code = row['대분류_코드']
+                industrial_name = row['대분류_명']
+                
+                # Extract 2-digit prefix from 4-digit code
+                prefix = basic_code[:2]
+                
+                # Map prefix to intermediate classification
+                if pd.notna(intermediate_code) and pd.notna(intermediate_name):
+                    intermediate_key = f"{int(intermediate_code)}: {intermediate_name}"
+                    self.prefix_to_intermediate[prefix] = intermediate_key
+                
+                # Map prefix to industrial classification
+                if pd.notna(industrial_code) and pd.notna(industrial_name):
+                    self.prefix_to_industrial[prefix] = industrial_name
+    
+    def _find_intermediate_by_prefix(self, basic_sector_code: str) -> str:
+        """Find intermediate classification using 2-digit prefix from mapping data."""
+        # Ensure 4-digit format
+        if basic_sector_code.isdigit():
+            formatted_code = f"{int(basic_sector_code):04d}"
+            prefix = formatted_code[:2]
+            if hasattr(self, 'prefix_to_intermediate') and prefix in self.prefix_to_intermediate:
+                return self.prefix_to_intermediate[prefix]
+        return None
+    
+    def _load_regional_multipliers(self):
+        """Load regional production, import, and value-added multipliers (lazy loading)."""
+        # For now, mark multipliers as available but not loaded (lazy loading)
+        # They will be loaded on-demand when needed
+        try:
+            import os
+            self.multiplier_files_available = {
+                'production': os.path.exists(self.multiplier_files['production']),
+                'import': os.path.exists(self.multiplier_files['import']),
+                'value_added': os.path.exists(self.multiplier_files['value_added'])
+            }
+            
+            print(f"Multiplier files available:")
+            print(f"- Production: {'✓' if self.multiplier_files_available['production'] else '✗'}")
+            print(f"- Import: {'✓' if self.multiplier_files_available['import'] else '✗'}")
+            print(f"- Value-added: {'✓' if self.multiplier_files_available['value_added'] else '✗'}")
+            
+            # Initialize as None - will be loaded on demand
+            self.production_multipliers = None
+            self.import_multipliers = None
+            self.value_added_multipliers = None
+            
+        except Exception as e:
+            print(f"Warning: Could not check multiplier files: {str(e)}")
+            self.multiplier_files_available = {
+                'production': False,
+                'import': False,
+                'value_added': False
+            }
+            self.production_multipliers = None
+            self.import_multipliers = None
+            self.value_added_multipliers = None
+    
+    def _load_multiplier_file(self, filepath: str, sheet_name: str) -> pd.DataFrame:
+        """
+        Load a regional multiplier file with proper formatting.
+        
+        Args:
+            filepath: Path to the Excel file
+            sheet_name: Name of the sheet to load
+        
+        Returns:
+            DataFrame with multiplier coefficients
+        """
+        try:
+            # Load the multiplier data starting from row 6 (skiprows=5)
+            df = pd.read_excel(
+                filepath,
+                sheet_name=sheet_name,
+                skiprows=5,
+                header=0
+            )
+            
+            # Clean up the dataframe
+            # First 3 columns are: 지역, 부문, 부문명
+            # Remaining columns are the multiplier values for each sector
+            region_col = df.columns[0]  # 지역
+            sector_col = df.columns[1]  # 부문
+            name_col = df.columns[2]    # 부문명
+            
+            # Create index from region and sector codes
+            df['region_sector'] = df[region_col].astype(str) + '_' + df[sector_col].astype(str)
+            
+            # Set index and select only multiplier columns (skip first 3 columns)
+            multiplier_df = df.set_index('region_sector').iloc[:, 3:]
+            
+            # Remove any rows/columns with all NaN values
+            multiplier_df = multiplier_df.dropna(how='all').dropna(axis=1, how='all')
+            
+            return multiplier_df
+            
+        except Exception as e:
+            print(f"Error loading {filepath}: {str(e)}")
+            return None
     
     def _build_sector_hierarchy(self):
-        """Build comprehensive sector hierarchy mapping."""
+        """Build comprehensive sector hierarchy mapping using real classification data."""
         self.sector_hierarchy = {
-            'basic_to_intermediate': {},  # 기본부문 -> 중분류
-            'intermediate_to_industry': {},  # 중분류 -> 대뵔류
-            'industry_groups': {}  # 대분류 그룹핑
+            'basic_to_sub': getattr(self, 'basic_to_sub_map', {}),
+            'basic_to_intermediate': getattr(self, 'basic_to_intermediate_map', {}),
+            'basic_to_industrial': getattr(self, 'basic_to_industrial_map', {}),
+            'intermediate_to_industrial': {},
+            'industrial_to_intermediate': {}
         }
         
-        # Create systematic mapping based on sector codes
-        for sector in self.intermediate_sectors:
-            if ':' in sector:
-                code, name = sector.split(':', 1)
-                code = code.strip()
-                name = name.strip()
-                
-                # Map to industry sectors based on code ranges
-                if code.isdigit():
-                    code_num = int(code)
-                    if 1 <= code_num <= 6:
-                        industry = "농림수산업"
-                    elif 7 <= code_num <= 14:
-                        industry = "광업"
-                    elif 15 <= code_num <= 42:
-                        industry = "제조업"
-                    elif 43 <= code_num <= 48:
-                        industry = "전력가스수도건설업"
-                    elif 49 <= code_num <= 56:
-                        industry = "서비스업"
-                    else:
-                        industry = "기타"
-                        
-                    self.sector_hierarchy['intermediate_to_industry'][sector] = industry
+        # Build intermediate to industrial mapping from real data
+        if hasattr(self, 'basic_to_intermediate_map') and hasattr(self, 'basic_to_industrial_map'):
+            for basic_code in self.basic_to_intermediate_map:
+                if basic_code in self.basic_to_industrial_map:
+                    intermediate = self.basic_to_intermediate_map[basic_code]
+                    industrial = self.basic_to_industrial_map[basic_code]
+                    self.sector_hierarchy['intermediate_to_industrial'][intermediate] = industrial
         
-        # Build reverse mappings
-        self.sector_hierarchy['industry_to_intermediate'] = {}
-        for intermediate, industry in self.sector_hierarchy['intermediate_to_industry'].items():
-            if industry not in self.sector_hierarchy['industry_to_intermediate']:
-                self.sector_hierarchy['industry_to_intermediate'][industry] = []
-            self.sector_hierarchy['industry_to_intermediate'][industry].append(intermediate)
+        # Build reverse mapping (industrial to intermediate)
+        industrial_to_intermediate = {}
+        for intermediate, industrial in self.sector_hierarchy['intermediate_to_industrial'].items():
+            if industrial not in industrial_to_intermediate:
+                industrial_to_intermediate[industrial] = []
+            if intermediate not in industrial_to_intermediate[industrial]:
+                industrial_to_intermediate[industrial].append(intermediate)
+        
+        self.sector_hierarchy['industrial_to_intermediate'] = industrial_to_intermediate
     
     def _load_basic_sectors(self):
         """Load basic sectors (기본부문) from IO table."""
@@ -644,26 +775,23 @@ class EmploymentCalculator:
         intermediate_impacts = {}
         
         for basic_sector, impact in basic_sector_impacts.items():
-            # Convert to string for consistent handling
+            # Convert to string and format as 4-digit code with leading zeros
             basic_sector_str = str(basic_sector)
-            
-            # Use real sector mapping if available
-            if hasattr(self, 'basic_to_intermediate_map') and basic_sector_str in self.basic_to_intermediate_map:
-                intermediate_sector = self.basic_to_intermediate_map[basic_sector_str]
+            if basic_sector_str.isdigit():
+                formatted_sector_code = f"{int(basic_sector_str):04d}"
             else:
-                # Fallback to pattern-based mapping
-                if basic_sector_str.startswith('27'):
-                    intermediate_sector = '27: 철강1차제품'
-                elif basic_sector_str.startswith('28'):
-                    intermediate_sector = '28: 비철금속괴 및 1차제품'
-                elif basic_sector_str.startswith('05'):
-                    intermediate_sector = '05: 석탄 및 금속광물'
-                elif basic_sector_str.startswith('20'):
-                    intermediate_sector = '20: 석유정제품'
-                elif basic_sector_str.startswith('35'):
-                    intermediate_sector = '35: 전력'
-                else:
-                    intermediate_sector = f'{basic_sector_str[:2]}: 기타제조업'
+                formatted_sector_code = basic_sector_str
+            
+            # Use real sector mapping from classification file
+            if hasattr(self, 'basic_to_intermediate_map') and formatted_sector_code in self.basic_to_intermediate_map:
+                intermediate_sector = self.basic_to_intermediate_map[formatted_sector_code]
+            else:
+                # Try to find mapping using first 2 digits from classification file
+                intermediate_sector = self._find_intermediate_by_prefix(basic_sector_str)
+                if intermediate_sector is None:
+                    # Skip this sector if no mapping found
+                    print(f"Warning: No intermediate classification found for sector {basic_sector_str} (formatted: {formatted_sector_code})")
+                    continue
             
             # Aggregate impacts by intermediate classification
             if intermediate_sector in intermediate_impacts:
@@ -738,11 +866,18 @@ class EmploymentCalculator:
     def get_sector_hierarchy_info(self) -> Dict[str, Union[List[str], int]]:
         """Get information about sector hierarchy."""
         return {
-            'industry_sectors': list(self.sector_hierarchy.get('industry_to_intermediate', {}).keys()),
+            'industrial_sectors': list(self.sector_hierarchy.get('industrial_to_intermediate', {}).keys()),
             'intermediate_sectors': self.intermediate_sectors,
             'total_basic_sectors': len(self.basic_sectors) if self.basic_sectors else 0,
+            'total_sub_sectors': len(getattr(self, 'basic_to_sub_map', {})),
             'io_coefficients_loaded': self.A_matrix is not None,
-            'import_domestic_split_available': self.Am_matrix is not None and self.Ad_matrix is not None
+            'import_domestic_split_available': self.Am_matrix is not None and self.Ad_matrix is not None,
+            'production_multipliers_loaded': self.production_multipliers is not None,
+            'import_multipliers_loaded': self.import_multipliers is not None,
+            'value_added_multipliers_loaded': self.value_added_multipliers is not None,
+            'production_multipliers_available': getattr(self, 'multiplier_files_available', {}).get('production', False),
+            'import_multipliers_available': getattr(self, 'multiplier_files_available', {}).get('import', False),
+            'value_added_multipliers_available': getattr(self, 'multiplier_files_available', {}).get('value_added', False)
         }
     
     def analyze_sector_linkages(self, basic_sector_code: str) -> Dict[str, Dict[str, float]]:
@@ -759,6 +894,313 @@ class EmploymentCalculator:
             'backward_linkages': self.get_sector_linkages(basic_sector_code, 'backward'),
             'forward_linkages': self.get_sector_linkages(basic_sector_code, 'forward')
         }
+    
+    def calculate_production_impact(
+        self, 
+        basic_sector_code: str, 
+        demand_change: float, 
+        target_regions: Optional[List[str]] = None
+    ) -> Dict[str, Dict[str, float]]:
+        """
+        Calculate production impact using regional production multipliers (생산유발계수).
+        
+        Args:
+            basic_sector_code: Basic sector code (e.g., '2711')
+            demand_change: Change in final demand (10억원)
+            target_regions: List of regions to analyze
+        
+        Returns:
+            Dictionary: {region: {sector: production_change}}
+        """
+        # Lazy load production multipliers if not already loaded
+        if self.production_multipliers is None:
+            if getattr(self, 'multiplier_files_available', {}).get('production', False):
+                print("Loading production multipliers on demand...")
+                self.production_multipliers = self._load_multiplier_file(
+                    self.multiplier_files['production'], '생산유발계수'
+                )
+                if self.production_multipliers is not None:
+                    print(f"Loaded production multipliers: {self.production_multipliers.shape}")
+            
+        if self.production_multipliers is None:
+            print("Warning: Production multipliers not available")
+            return {}
+        
+        if target_regions is None:
+            target_regions = self.regions
+        
+        production_impacts = {}
+        
+        for region in target_regions:
+            region_impacts = {}
+            shock_key = f"{region}_{basic_sector_code}"
+            
+            if shock_key in self.production_multipliers.index:
+                # Get production multipliers for this region-sector shock
+                multipliers = self.production_multipliers.loc[shock_key]
+                
+                for sector_name, multiplier in multipliers.items():
+                    if pd.notna(multiplier) and abs(multiplier) > 0.001:
+                        production_change = demand_change * multiplier
+                        region_impacts[sector_name] = production_change
+            
+            production_impacts[region] = region_impacts
+        
+        return production_impacts
+    
+    def calculate_import_impact(
+        self, 
+        basic_sector_code: str, 
+        demand_change: float, 
+        target_regions: Optional[List[str]] = None
+    ) -> Dict[str, Dict[str, float]]:
+        """
+        Calculate import impact using regional import multipliers (수입유발계수).
+        
+        Args:
+            basic_sector_code: Basic sector code (e.g., '2711')
+            demand_change: Change in final demand (10억원)
+            target_regions: List of regions to analyze
+        
+        Returns:
+            Dictionary: {region: {sector: import_change}}
+        """
+        # Lazy load import multipliers if not already loaded
+        if self.import_multipliers is None:
+            if getattr(self, 'multiplier_files_available', {}).get('import', False):
+                print("Loading import multipliers on demand...")
+                self.import_multipliers = self._load_multiplier_file(
+                    self.multiplier_files['import'], '수입유발계수'
+                )
+                if self.import_multipliers is not None:
+                    print(f"Loaded import multipliers: {self.import_multipliers.shape}")
+            
+        if self.import_multipliers is None:
+            print("Warning: Import multipliers not available")
+            return {}
+        
+        if target_regions is None:
+            target_regions = self.regions
+        
+        import_impacts = {}
+        
+        for region in target_regions:
+            region_impacts = {}
+            shock_key = f"{region}_{basic_sector_code}"
+            
+            if shock_key in self.import_multipliers.index:
+                # Get import multipliers for this region-sector shock
+                multipliers = self.import_multipliers.loc[shock_key]
+                
+                for sector_name, multiplier in multipliers.items():
+                    if pd.notna(multiplier) and abs(multiplier) > 0.001:
+                        import_change = demand_change * multiplier
+                        region_impacts[sector_name] = import_change
+            
+            import_impacts[region] = region_impacts
+        
+        return import_impacts
+    
+    def calculate_value_added_impact(
+        self, 
+        basic_sector_code: str, 
+        demand_change: float, 
+        target_regions: Optional[List[str]] = None
+    ) -> Dict[str, Dict[str, float]]:
+        """
+        Calculate value-added impact using regional value-added multipliers (부가가치유발계수).
+        
+        Args:
+            basic_sector_code: Basic sector code (e.g., '2711')
+            demand_change: Change in final demand (10억원)
+            target_regions: List of regions to analyze
+        
+        Returns:
+            Dictionary: {region: {sector: value_added_change}}
+        """
+        # Lazy load value-added multipliers if not already loaded
+        if self.value_added_multipliers is None:
+            if getattr(self, 'multiplier_files_available', {}).get('value_added', False):
+                print("Loading value-added multipliers on demand...")
+                self.value_added_multipliers = self._load_multiplier_file(
+                    self.multiplier_files['value_added'], '부가가치유발계수'
+                )
+                if self.value_added_multipliers is not None:
+                    print(f"Loaded value-added multipliers: {self.value_added_multipliers.shape}")
+            
+        if self.value_added_multipliers is None:
+            print("Warning: Value-added multipliers not available")
+            return {}
+        
+        if target_regions is None:
+            target_regions = self.regions
+        
+        value_added_impacts = {}
+        
+        for region in target_regions:
+            region_impacts = {}
+            shock_key = f"{region}_{basic_sector_code}"
+            
+            if shock_key in self.value_added_multipliers.index:
+                # Get value-added multipliers for this region-sector shock
+                multipliers = self.value_added_multipliers.loc[shock_key]
+                
+                for sector_name, multiplier in multipliers.items():
+                    if pd.notna(multiplier) and abs(multiplier) > 0.001:
+                        value_added_change = demand_change * multiplier
+                        region_impacts[sector_name] = value_added_change
+            
+            value_added_impacts[region] = region_impacts
+        
+        return value_added_impacts
+    
+    def analyze_comprehensive_impact(
+        self,
+        basic_sector_code: str,
+        demand_change: float,
+        target_regions: Optional[List[str]] = None,
+        include_employment: bool = True,
+        include_production: bool = True,
+        include_imports: bool = True,
+        include_value_added: bool = True
+    ) -> Dict[str, Dict]:
+        """
+        Comprehensive impact analysis including employment, production, imports, and value-added.
+        
+        Args:
+            basic_sector_code: Basic sector code (e.g., '2711')
+            demand_change: Change in final demand (10억원)
+            target_regions: List of regions to analyze
+            include_employment: Include employment impact analysis
+            include_production: Include production impact analysis
+            include_imports: Include import impact analysis
+            include_value_added: Include value-added impact analysis
+        
+        Returns:
+            Dictionary with comprehensive impact analysis results
+        """
+        if target_regions is None:
+            target_regions = self.regions
+        
+        results = {
+            'basic_sector_code': basic_sector_code,
+            'demand_change_billion_won': demand_change,
+            'target_regions': target_regions
+        }
+        
+        # Employment impact (using existing method)
+        if include_employment:
+            employment_impacts = self.analyze_sector_employment_impact(
+                basic_sector_code, demand_change, target_regions, include_linkages=True
+            )
+            results['employment'] = employment_impacts
+        
+        # Production impact (using production multipliers)
+        if include_production:
+            production_impacts = self.calculate_production_impact(
+                basic_sector_code, demand_change, target_regions
+            )
+            results['production'] = production_impacts
+        
+        # Import impact (using import multipliers)
+        if include_imports:
+            import_impacts = self.calculate_import_impact(
+                basic_sector_code, demand_change, target_regions
+            )
+            results['imports'] = import_impacts
+        
+        # Value-added impact (using value-added multipliers)
+        if include_value_added:
+            value_added_impacts = self.calculate_value_added_impact(
+                basic_sector_code, demand_change, target_regions
+            )
+            results['value_added'] = value_added_impacts
+        
+        # Calculate summary statistics
+        results['summary'] = self._calculate_comprehensive_summary(results)
+        
+        return results
+    
+    def _calculate_comprehensive_summary(self, results: Dict) -> Dict:
+        """Calculate summary statistics for comprehensive impact analysis."""
+        summary = {}
+        
+        # Employment summary
+        if 'employment' in results:
+            total_employment = sum(
+                sum(impacts.values()) for impacts in results['employment'].values()
+            )
+            summary['total_employment_change'] = total_employment
+            summary['employment_intensity'] = total_employment / results['demand_change_billion_won'] if results['demand_change_billion_won'] != 0 else 0
+        
+        # Production summary
+        if 'production' in results:
+            total_production = sum(
+                sum(impacts.values()) for impacts in results['production'].values()
+            )
+            summary['total_production_change'] = total_production
+            summary['production_multiplier'] = total_production / results['demand_change_billion_won'] if results['demand_change_billion_won'] != 0 else 0
+        
+        # Import summary
+        if 'imports' in results:
+            total_imports = sum(
+                sum(impacts.values()) for impacts in results['imports'].values()
+            )
+            summary['total_import_change'] = total_imports
+            summary['import_multiplier'] = total_imports / results['demand_change_billion_won'] if results['demand_change_billion_won'] != 0 else 0
+        
+        # Value-added summary
+        if 'value_added' in results:
+            total_value_added = sum(
+                sum(impacts.values()) for impacts in results['value_added'].values()
+            )
+            summary['total_value_added_change'] = total_value_added
+            summary['value_added_multiplier'] = total_value_added / results['demand_change_billion_won'] if results['demand_change_billion_won'] != 0 else 0
+        
+        return summary
+
+def run_comprehensive_analysis(
+    basic_sector_code: str, 
+    demand_change: float, 
+    target_regions: List[str] = None,
+    include_employment: bool = True,
+    include_production: bool = True,
+    include_imports: bool = True,
+    include_value_added: bool = True
+):
+    """
+    Run comprehensive impact analysis including employment, production, imports, and value-added.
+    
+    Args:
+        basic_sector_code: Basic sector code (e.g., '2711' for pig iron)
+        demand_change: Demand change in 10억원 (positive for increase, negative for decrease)
+        target_regions: List of regions to analyze (default: all regions)
+        include_employment: Include employment impact analysis
+        include_production: Include production impact analysis
+        include_imports: Include import impact analysis
+        include_value_added: Include value-added impact analysis
+    
+    Returns:
+        Dictionary with comprehensive analysis results
+    """
+    calculator = EmploymentCalculator(
+        'iotable/2020지역_부속표_고용표_통합중분류.xlsx',
+        'iotable/(표)(2020실측)투입산출표_기초가격_기본부문.xlsx'
+    )
+    
+    # Run comprehensive analysis
+    results = calculator.analyze_comprehensive_impact(
+        basic_sector_code=basic_sector_code,
+        demand_change=demand_change,
+        target_regions=target_regions,
+        include_employment=include_employment,
+        include_production=include_production,
+        include_imports=include_imports,
+        include_value_added=include_value_added
+    )
+    
+    results['calculator'] = calculator
+    return results
 
 def interactive_sector_analysis():
     """Interactive user interface for sector employment impact analysis."""
@@ -774,16 +1216,22 @@ def interactive_sector_analysis():
     # Show system info
     hierarchy_info = calculator.get_sector_hierarchy_info()
     print(f"사용 가능한 데이터:")
-    print(f"- 기본부문 (basic_sectors): {hierarchy_info['total_basic_sectors']}개")
-    print(f"- 중분류 (intermediate_sectors): {len(hierarchy_info['intermediate_sectors'])}개") 
-    print(f"- 대분류 (industry_sectors): {len(hierarchy_info['industry_sectors'])}개")
+    print(f"- 기본분류 (basic_sectors): {hierarchy_info['total_basic_sectors']}개 (4자리)")
+    print(f"- 소분류 (sub_sectors): {hierarchy_info['total_sub_sectors']}개 (3자리)")
+    print(f"- 중분류 (intermediate_sectors): {len(hierarchy_info['intermediate_sectors'])}개 (2자리)")
+    print(f"- 대분류 (industrial_sectors): {len(hierarchy_info['industrial_sectors'])}개 (1자리)")
     print(f"- 분석 지역: {len(calculator.get_available_regions())}개")
     print(f"- IO 계수 로딩: {'✓' if hierarchy_info['io_coefficients_loaded'] else '✗'}")
     print(f"- 수입/국산 분리: {'✓' if hierarchy_info['import_domestic_split_available'] else '✗'}")
+    print(f"- 생산유발계수: {'✓' if hierarchy_info['production_multipliers_loaded'] else '✗'}")
+    print(f"- 수입유발계수: {'✓' if hierarchy_info['import_multipliers_loaded'] else '✗'}")
+    print(f"- 부가가치유발계수: {'✓' if hierarchy_info['value_added_multipliers_loaded'] else '✗'}")
     
     print(f"\n대분류 산업 목록:")
-    for industry in hierarchy_info['industry_sectors']:
+    for industry in hierarchy_info['industrial_sectors'][:10]:  # Show first 10
         print(f"  - {industry}")
+    if len(hierarchy_info['industrial_sectors']) > 10:
+        print(f"  ... 총 {len(hierarchy_info['industrial_sectors'])}개")
     
     print(f"\n분석 가능 지역:")
     regions = calculator.get_available_regions()
