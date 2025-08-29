@@ -49,19 +49,19 @@ class EnhancedSectorAnalyzer:
         
         # Initialize all analyzer components
         print("Initializing Enhanced Sector Impact Analyzer...")
-        print("1/5 Loading IO Data...")
+        print("1/6 Loading IO Data...")
         self.io_loader = IODataLoader(basic_io_file)
         
-        print("2/5 Initializing Supply Chain Analyzer...")
+        print("2/6 Initializing Supply Chain Analyzer...")
         self.supply_chain_analyzer = SupplyChainAnalyzer(self.io_loader)
         
-        print("3/5 Initializing Employment Analyzer...")
+        print("3/6 Initializing Employment Analyzer...")
         self.employment_analyzer = EmploymentAnalyzer(employment_file)
         
-        print("4/5 Initializing Import/Domestic Analyzer...")
+        print("4/6 Initializing Import/Domestic Analyzer...")
         self.import_domestic_analyzer = ImportDomesticAnalyzer(self.io_loader, basic_io_file)
         
-        print("5/5 Initializing Comprehensive Analyzer...")
+        print("5/6 Initializing Comprehensive Analyzer...")
         self.comprehensive_analyzer = ComprehensiveAnalyzer(self.io_loader, basic_io_file)
         
         print("6/6 Initializing Table Formatter...")
@@ -173,31 +173,44 @@ class EnhancedSectorAnalyzer:
             print("-" * 50)
             target_region = analysis_options.get('target_region', '전지역')
             
-            # Use supply chain results for employment calculation
-            total_impacts = results['supply_chain_analysis'].get('total_impacts', {})
-            sector_impact_codes = {}
-            for sector_label, impact in total_impacts.items():
-                if ':' in sector_label:
-                    sector_code = sector_label.split(':')[0].strip()
-                    sector_impact_codes[sector_code] = impact
-            
-            intermediate_impacts = self.employment_analyzer.map_basic_to_intermediate_sectors(sector_impact_codes)
-            employment_results = {}
-            
-            for intermediate_sector, impact in intermediate_impacts.items():
-                emp_coeff = self.employment_analyzer.get_employment_intensity(intermediate_sector, target_region)
-                employment_change = impact * emp_coeff
-                if abs(employment_change) > 0.1:
-                    employment_results[intermediate_sector] = employment_change
-            
-            results['employment_analysis'] = {
-                'sectoral_employment': employment_results,
-                'total_employment_change': sum(employment_results.values()),
-                'target_region': target_region
-            }
-            
-            print(f"   Total employment change: {sum(employment_results.values()):,.0f} jobs")
-            print(f"   Sectors with employment impact: {len(employment_results)}")
+            # Check if supply chain analysis was performed
+            if not analysis_options.get('supply_chain', True) or not results.get('supply_chain_analysis'):
+                print("   Warning: Employment analysis requires supply chain analysis. Skipping employment analysis.")
+                results['employment_analysis'] = {
+                    'sectoral_employment': {},
+                    'total_employment_change': 0,
+                    'target_region': target_region,
+                    'warning': 'Supply chain analysis required for employment calculation'
+                }
+            else:
+                # Use supply chain results for employment calculation
+                total_impacts = results['supply_chain_analysis'].get('total_impacts', {})
+                if not total_impacts:
+                    print("   Warning: No supply chain impacts found. Employment analysis will be empty.")
+                
+                sector_impact_codes = {}
+                for sector_label, impact in total_impacts.items():
+                    if ':' in sector_label:
+                        sector_code = sector_label.split(':')[0].strip()
+                        sector_impact_codes[sector_code] = impact
+                
+                intermediate_impacts = self.employment_analyzer.map_basic_to_intermediate_sectors(sector_impact_codes)
+                employment_results = {}
+                
+                for intermediate_sector, impact in intermediate_impacts.items():
+                    emp_coeff = self.employment_analyzer.get_employment_intensity(intermediate_sector, target_region)
+                    employment_change = impact * emp_coeff
+                    if abs(employment_change) > 0.1:
+                        employment_results[intermediate_sector] = employment_change
+                
+                results['employment_analysis'] = {
+                    'sectoral_employment': employment_results,
+                    'total_employment_change': sum(employment_results.values()),
+                    'target_region': target_region
+                }
+                
+                print(f"   Total employment change: {sum(employment_results.values()):,.0f} jobs")
+                print(f"   Sectors with employment impact: {len(employment_results)}")
         
         # 3. Import/Domestic Analysis
         if analysis_options.get('import_domestic', True):
@@ -251,12 +264,13 @@ class EnhancedSectorAnalyzer:
         
         return results
     
-    def analyze_steel_coal_comprehensive(self, reduction_amount: float = 1000) -> Dict:
+    def analyze_steel_coal_comprehensive(self, reduction_amount: float = 1000, max_sectors: int = None) -> Dict:
         """
         Comprehensive steel-coal supply chain analysis with all features.
         
         Args:
             reduction_amount: Coal reduction amount in steel sector (10억원)
+            max_sectors: Maximum number of steel sectors to analyze (None for all)
             
         Returns:
             Comprehensive steel-coal analysis results
@@ -292,8 +306,9 @@ class EnhancedSectorAnalyzer:
             'coal_specific_impacts': {}
         }
         
-        # Analyze each steel sector
-        for i, (steel_code, steel_name) in enumerate(steel_sectors[:3]):  # Top 3 sectors
+        # Analyze each steel sector (limit if specified)
+        sectors_to_analyze = steel_sectors[:max_sectors] if max_sectors else steel_sectors
+        for i, (steel_code, steel_name) in enumerate(sectors_to_analyze):
             print(f"\n{'-'*60}")
             print(f"ANALYZING STEEL SECTOR {i+1}: {steel_code} - {steel_name}")
             print(f"{'-'*60}")
@@ -317,22 +332,26 @@ class EnhancedSectorAnalyzer:
             results['aggregate_impacts']['total_domestic_impact'] += import_domestic.get('total_domestic_effect', 0)
             
             comprehensive = sector_analysis.get('comprehensive_analysis', {})
-            env_summary = comprehensive.get('environmental_analysis', {}).get('environmental_summary', {})
-            results['aggregate_impacts']['total_co2_impact'] += env_summary.get('total_co2_thousand_tons', 0)
+            # Standardize data access pattern - use comprehensive_summary for consistency
+            comp_summary = comprehensive.get('comprehensive_summary', {})
+            env_impact = comp_summary.get('environmental_impact', {})
+            results['aggregate_impacts']['total_co2_impact'] += env_impact.get('total_co2_impact', 0)
             
-            fiscal_analysis = comprehensive.get('fiscal_analysis', {})
-            results['aggregate_impacts']['total_tax_impact'] += fiscal_analysis.get('total_tax_impact', 0)
+            fiscal_impact = comp_summary.get('fiscal_impact', {})
+            results['aggregate_impacts']['total_tax_impact'] += fiscal_impact.get('total_tax_impact', 0)
             
             # Identify coal-specific impacts
             coal_impacts = {}
             for sector_label, impact in supply_impacts.items():
+                sector_label_lower = sector_label.lower()
                 for coal_code, coal_name in coal_sectors:
-                    if coal_code in sector_label.lower():
+                    # Convert coal_code to lowercase for consistent comparison
+                    if coal_code.lower() in sector_label_lower:
                         coal_impacts[sector_label] = impact
                         break
-                # Also check keywords
+                # Also check keywords (convert to lowercase for consistency)
                 for keyword in ['석탄', '코크스', 'coal', 'coke']:
-                    if keyword in sector_label.lower():
+                    if keyword.lower() in sector_label_lower:
                         coal_impacts[sector_label] = impact
                         break
             
@@ -384,8 +403,15 @@ class EnhancedSectorAnalyzer:
         
         # Environmental impact summary
         env_impact = comp_summary.get('environmental_impact', {})
+        co2_impact = env_impact.get('total_co2_impact', 0)
+        # Validate and convert CO2 impact to tons
+        try:
+            co2_impact_tons = float(co2_impact) * 1000 if co2_impact is not None else 0
+        except (TypeError, ValueError):
+            co2_impact_tons = 0
+        
         summary['environmental_impact'] = {
-            'co2_impact_tons': env_impact.get('total_co2_impact', 0) * 1000,  # Convert to tons
+            'co2_impact_tons': co2_impact_tons,
             'car_equivalent_years': env_impact.get('car_equivalent_years', 0),
             'environmental_concern_level': comp_summary.get('overall_assessment', {}).get('environmental_concern', 'low')
         }
@@ -529,13 +555,21 @@ class EnhancedSectorAnalyzer:
                 })
         
         if coal_specific_data:
-            coal_df = pd.DataFrame(coal_specific_data)
-            coal_df = coal_df.sort_values('Impact_Value', key=abs, ascending=False)
-            
-            self.table_formatter.display_matrix_table(
-                coal_df.set_index('Steel_Sector'),
-                "Coal-Specific Supply Chain Impacts"
-            )
+            try:
+                coal_df = pd.DataFrame(coal_specific_data)
+                if not coal_df.empty and 'Impact_Value' in coal_df.columns:
+                    coal_df = coal_df.sort_values('Impact_Value', key=abs, ascending=False)
+                    
+                    self.table_formatter.display_matrix_table(
+                        coal_df.set_index('Steel_Sector'),
+                        "Coal-Specific Supply Chain Impacts"
+                    )
+                else:
+                    print("   No valid coal-specific impact data to display.")
+            except Exception as e:
+                print(f"   Error creating coal-specific impacts table: {str(e)}")
+        else:
+            print("   No coal-specific impacts found.")
         
         # Individual sector analysis tables
         sector_analyses = steel_coal_results.get('sector_analyses', {})
@@ -567,12 +601,21 @@ class EnhancedSectorAnalyzer:
             if coal_specific_data:
                 all_matrices['Coal_Specific_Impacts'] = coal_df.set_index('Steel_Sector')
             
-            # Add detailed sector matrices
-            for steel_sector, analysis in sector_analyses.items():
-                sector_matrices = self.table_formatter.create_full_analysis_tables(analysis, show_top_n=15)
-                for matrix_name, matrix in sector_matrices.items():
-                    sheet_name = f"{steel_sector.split(':')[0]}_{matrix_name}"[:31]
-                    all_matrices[sheet_name] = matrix
+            # Add detailed sector matrices (limit to prevent memory issues)
+            max_sectors_for_export = 5  # Limit to prevent memory issues
+            for i, (steel_sector, analysis) in enumerate(sector_analyses.items()):
+                if i >= max_sectors_for_export:
+                    print(f"   Limiting export to first {max_sectors_for_export} sectors to prevent memory issues.")
+                    break
+                    
+                try:
+                    sector_matrices = self.table_formatter.create_full_analysis_tables(analysis, show_top_n=15)
+                    for matrix_name, matrix in sector_matrices.items():
+                        sheet_name = f"{steel_sector.split(':')[0]}_{matrix_name}"[:31]
+                        all_matrices[sheet_name] = matrix
+                except Exception as e:
+                    print(f"   Warning: Could not export matrices for {steel_sector}: {str(e)}")
+                    continue
             
             self.table_formatter.export_matrices_to_excel(
                 all_matrices,
@@ -645,9 +688,13 @@ class EnhancedSectorAnalyzer:
                 print("Please enter a valid 4-digit sector code.")
                 return
             
-            amount = float(input("Enter demand change (billion won): "))
-            if amount == 0:
-                print("Please enter a non-zero amount.")
+            try:
+                amount = float(input("Enter demand change (billion won): "))
+                if amount == 0:
+                    print("Please enter a non-zero amount.")
+                    return
+            except ValueError:
+                print("Please enter a valid number.")
                 return
             
             print(f"\nRunning comprehensive analysis...")
@@ -669,9 +716,13 @@ class EnhancedSectorAnalyzer:
                 print("Please enter a valid 4-digit sector code.")
                 return
             
-            amount = float(input("Enter demand change (billion won): "))
-            if amount == 0:
-                print("Please enter a non-zero amount.")
+            try:
+                amount = float(input("Enter demand change (billion won): "))
+                if amount == 0:
+                    print("Please enter a non-zero amount.")
+                    return
+            except ValueError:
+                print("Please enter a valid number.")
                 return
             
             export_excel = input("Export to Excel? (y/n) [n]: ").strip().lower() == 'y'
@@ -693,11 +744,15 @@ class EnhancedSectorAnalyzer:
     def _interactive_steel_coal_analysis_tables(self):
         """Interactive steel-coal analysis with IO table display."""
         try:
-            amount = input("Enter coal reduction amount (billion won) [1000]: ").strip()
-            if not amount:
-                amount = 1000
+            amount_input = input("Enter coal reduction amount (billion won) [1000]: ").strip()
+            if not amount_input:
+                amount = 1000.0  # Use float for consistency
             else:
-                amount = float(amount)
+                try:
+                    amount = float(amount_input)
+                except ValueError:
+                    print("Please enter a valid number.")
+                    return
             
             export_excel = input("Export to Excel? (y/n) [n]: ").strip().lower() == 'y'
             
@@ -717,11 +772,15 @@ class EnhancedSectorAnalyzer:
     def _interactive_steel_coal_comprehensive(self):
         """Interactive steel-coal comprehensive analysis."""
         try:
-            amount = input("Enter coal reduction amount (billion won) [1000]: ").strip()
-            if not amount:
-                amount = 1000
+            amount_input = input("Enter coal reduction amount (billion won) [1000]: ").strip()
+            if not amount_input:
+                amount = 1000.0  # Use float for consistency
             else:
-                amount = float(amount)
+                try:
+                    amount = float(amount_input)
+                except ValueError:
+                    print("Please enter a valid number.")
+                    return
             
             print(f"\nRunning comprehensive steel-coal analysis...")
             results = self.analyze_steel_coal_comprehensive(amount)
@@ -762,17 +821,32 @@ class EnhancedSectorAnalyzer:
                 return
             
             sector_code = input("Enter sector code (4-digit): ").strip()
-            amount = float(input("Enter demand change (billion won): "))
+            if len(sector_code) != 4 or not sector_code.isdigit():
+                print("Please enter a valid 4-digit sector code.")
+                return
+            
+            try:
+                amount = float(input("Enter demand change (billion won): "))
+                if amount == 0:
+                    print("Please enter a non-zero amount.")
+                    return
+            except ValueError:
+                print("Please enter a valid number.")
+                return
             
             print(f"\nAnalyzing import vs domestic impacts...")
             results = self.import_domestic_analyzer.analyze_import_domestic_impacts(
                 sector_code, amount
             )
             
+            if not results:
+                print("No results returned from analysis.")
+                return
+            
             print(f"\n{'='*60}")
             print("IMPORT vs DOMESTIC IMPACT ANALYSIS")
             print(f"{'='*60}")
-            print(f"Sector: {results['target_sector_name']}")
+            print(f"Sector: {results.get('target_sector_name', 'Unknown')}")
             print(f"Demand change: {amount:,} billion won")
             print()
             print(f"Import impact: {results.get('total_import_effect', 0):,.1f} billion won")
@@ -784,10 +858,11 @@ class EnhancedSectorAnalyzer:
             
             input("\nPress Enter to continue...")
             
-        except ValueError:
-            print("Please enter valid numbers.")
+        except KeyboardInterrupt:
+            print("\nAnalysis interrupted by user.")
         except Exception as e:
             print(f"Analysis error: {str(e)}")
+            print("Please check your inputs and try again.")
     
     def _interactive_environmental_analysis(self):
         """Interactive environmental analysis."""
