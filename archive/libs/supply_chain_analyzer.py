@@ -30,6 +30,23 @@ class SupplyChainAnalyzer:
             # Get the coefficient matrix as numpy array
             A_matrix = self.io_loader.input_coefficients.fillna(0).values
             
+            # Diagnostic checks for input coefficient matrix
+            print(f"Input coefficient matrix shape: {A_matrix.shape}")
+            print(f"A matrix min: {np.min(A_matrix):.6f}, max: {np.max(A_matrix):.6f}")
+            print(f"A matrix mean: {np.mean(A_matrix):.6f}")
+            
+            # Check for negative coefficients (should be rare/zero in input coefficients)
+            negative_count = np.sum(A_matrix < 0)
+            if negative_count > 0:
+                print(f"WARNING: {negative_count} negative input coefficients found")
+            
+            # Check diagonal elements of A (should be small, typically < 0.5)
+            diagonal_A = np.diag(A_matrix)
+            max_diag_A = np.max(diagonal_A)
+            if max_diag_A > 0.8:
+                print(f"WARNING: Large diagonal coefficient in A matrix: {max_diag_A:.3f}")
+                print("This could cause Leontief inverse instability")
+            
             # Ensure square matrix
             n_rows, n_cols = A_matrix.shape
             matrix_size = min(n_rows, n_cols)
@@ -42,10 +59,29 @@ class SupplyChainAnalyzer:
             try:
                 self.leontief_inverse = np.linalg.inv(I_minus_A)
                 print(f"Calculated Leontief inverse: {matrix_size}x{matrix_size}")
+                
+                # Diagnostic checks for economic validity
+                diagonal_elements = np.diag(self.leontief_inverse)
+                min_diagonal = np.min(diagonal_elements)
+                max_diagonal = np.max(diagonal_elements)
+                print(f"Leontief diagonal range: {min_diagonal:.3f} to {max_diagonal:.3f}")
+                
+                # Check if diagonal elements are >= 1 (economic requirement)
+                if min_diagonal < 1.0:
+                    print(f"WARNING: Diagonal elements below 1.0 detected (min: {min_diagonal:.3f})")
+                    print("This suggests issues with the input coefficient matrix")
+                
+                # Check for negative diagonal elements (major red flag)
+                negative_diag_count = sum(1 for x in diagonal_elements if x < 0)
+                if negative_diag_count > 0:
+                    print(f"CRITICAL ERROR: {negative_diag_count} negative diagonal elements in Leontief inverse!")
+                    print("This indicates fundamental problems with input coefficients")
+                
             except np.linalg.LinAlgError:
                 # Use pseudo-inverse if singular
                 self.leontief_inverse = np.linalg.pinv(I_minus_A)
                 print(f"Calculated Leontief pseudo-inverse: {matrix_size}x{matrix_size}")
+                print("WARNING: Matrix was singular - using pseudo-inverse may cause economic inconsistencies")
                 
         except Exception as e:
             print(f"Warning: Could not calculate Leontief inverse: {str(e)}")
@@ -55,7 +91,7 @@ class SupplyChainAnalyzer:
         self, 
         target_sector: str, 
         reduction_amount: float,
-        include_indirect: bool = True
+        analysis_type: str = "full"
     ) -> Dict:
         """
         Analyze the impact of demand reduction in a target sector.
@@ -63,7 +99,10 @@ class SupplyChainAnalyzer:
         Args:
             target_sector: Sector code that reduces its demand
             reduction_amount: Amount of demand reduction (10억원)
-            include_indirect: Include indirect effects through Leontief multipliers
+            analysis_type: Type of analysis - "direct", "leontief", or "full"
+                         - "direct": Direct effects only (immediate suppliers)
+                         - "leontief": Indirect/multiplier effects only 
+                         - "full": Both direct and indirect effects
             
         Returns:
             Dictionary containing impact analysis results
@@ -71,27 +110,47 @@ class SupplyChainAnalyzer:
         results = {
             'target_sector': target_sector,
             'reduction_amount': reduction_amount,
+            'analysis_type': analysis_type,
             'target_sector_name': self.io_loader.get_sector_name(target_sector),
             'direct_impacts': {},
             'indirect_impacts': {},
+            'leontief_only_impacts': {},
             'total_impacts': {},
             'supply_chain_effects': {}
         }
         
-        # Calculate direct impacts (immediate suppliers affected)
-        direct_impacts = self._calculate_direct_supply_impacts(target_sector, reduction_amount)
-        results['direct_impacts'] = direct_impacts
-        
-        # Calculate indirect impacts if requested and Leontief inverse is available
-        if include_indirect and self.leontief_inverse is not None:
-            indirect_impacts = self._calculate_indirect_impacts(target_sector, reduction_amount)
-            results['indirect_impacts'] = indirect_impacts
-            
-            # Calculate total impacts (direct + indirect)
-            total_impacts = self._combine_impacts(direct_impacts, indirect_impacts)
-            results['total_impacts'] = total_impacts
-        else:
+        # Calculate impacts based on analysis type
+        if analysis_type == "direct":
+            # Direct effects only
+            direct_impacts = self._calculate_direct_supply_impacts(target_sector, reduction_amount)
+            results['direct_impacts'] = direct_impacts
             results['total_impacts'] = direct_impacts
+            
+        elif analysis_type == "leontief":
+            # Leontief/indirect effects only
+            if self.leontief_inverse is not None:
+                leontief_only_impacts = self._calculate_leontief_only_impacts(target_sector, reduction_amount)
+                results['leontief_only_impacts'] = leontief_only_impacts
+                results['total_impacts'] = leontief_only_impacts
+            else:
+                print("Warning: Leontief inverse not available for indirect analysis")
+                results['total_impacts'] = {}
+                
+        else:  # analysis_type == "full" or default
+            # Calculate both direct and indirect impacts
+            direct_impacts = self._calculate_direct_supply_impacts(target_sector, reduction_amount)
+            results['direct_impacts'] = direct_impacts
+            
+            if self.leontief_inverse is not None:
+                indirect_impacts = self._calculate_indirect_impacts(target_sector, reduction_amount)
+                results['indirect_impacts'] = indirect_impacts
+                
+                # Calculate total impacts (direct + indirect)
+                total_impacts = self._combine_impacts(direct_impacts, indirect_impacts)
+                results['total_impacts'] = total_impacts
+            else:
+                print("Warning: Leontief inverse not available, using direct impacts only")
+                results['total_impacts'] = direct_impacts
         
         # Analyze supply chain structure
         results['supply_chain_effects'] = self._analyze_supply_chain_structure(target_sector)
@@ -114,7 +173,14 @@ class SupplyChainAnalyzer:
         # Get backward linkages (what the target sector purchases)
         backward_linkages = self.io_loader.get_backward_linkages(target_sector)
         
+        # Filter out accounting totals
+        accounting_totals = ['9590', '9519', '9520', '중간투입계', '소계']
+        
         for supplier, coefficient in backward_linkages.items():
+            # Skip accounting totals
+            if any(total in supplier for total in accounting_totals):
+                continue
+                
             # Calculate reduction in purchases from this supplier
             impact = coefficient * reduction_amount
             direct_impacts[supplier] = -impact  # Negative because it's a reduction
@@ -152,19 +218,83 @@ class SupplyChainAnalyzer:
             # Calculate total output changes
             output_changes = self.leontief_inverse @ demand_shock
             
+            # Filter out accounting totals and value-added components
+            accounting_totals = ['9590', '9519', '9520', '9790', '중간투입계', '소계', '총투입계']
+            value_added_codes = ['9610', '9620', '9621', '9622', '9630', '9640', '9650']  # Value-added components
+            
             # Convert to dictionary
             for i, change in enumerate(output_changes):
                 if abs(change) > 0.01 and i < len(self.io_loader.sector_codes):  # Threshold for significance
                     sector_code = self.io_loader.sector_codes[i]
                     sector_name = self.io_loader.get_sector_name(sector_code)
+                    
+                    # Skip accounting totals and value-added components
+                    is_accounting_total = (
+                        sector_code in accounting_totals or 
+                        sector_code in value_added_codes or
+                        any(total in sector_code for total in accounting_totals) or
+                        any(total in sector_name for total in accounting_totals) or
+                        sector_code.startswith('96') or  # All 96xx value-added codes
+                        sector_code.startswith('97') or  # All 97xx accounting totals
+                        sector_code.startswith('99')     # All 99xx final demand codes
+                    )
+                    if is_accounting_total:
+                        # print(f"DEBUG: Filtering out accounting total: {sector_code}: {sector_name}")
+                        continue
+                    
                     sector_label = f"{sector_code}: {sector_name}"
                     indirect_impacts[sector_label] = change
+                    
+            # Check if results make economic sense
+            if reduction_amount < 0 and sum(output_changes) > 0:
+                print("WARNING: Economic inconsistency detected!")
+                print("Negative demand shock producing net positive output changes")
+                print("This suggests an error in the Leontief inverse or input coefficients")
             
             return indirect_impacts
             
         except Exception as e:
             print(f"Warning: Could not calculate indirect impacts: {str(e)}")
             return indirect_impacts
+    
+    def _calculate_leontief_only_impacts(self, target_sector: str, reduction_amount: float) -> Dict[str, float]:
+        """
+        Calculate only the indirect/multiplier effects from Leontief inverse, excluding direct effects.
+        
+        Args:
+            target_sector: Target sector code
+            reduction_amount: Demand change amount
+            
+        Returns:
+            Dictionary of Leontief-only impacts (total - direct)
+        """
+        leontief_only_impacts = {}
+        
+        try:
+            # Get total impacts from Leontief inverse
+            total_impacts = self._calculate_indirect_impacts(target_sector, reduction_amount)
+            
+            # Get direct impacts
+            direct_impacts = self._calculate_direct_supply_impacts(target_sector, reduction_amount)
+            
+            # Calculate Leontief-only by subtracting direct from total
+            for sector, total_impact in total_impacts.items():
+                # Extract sector code from "code: name" format
+                sector_code = sector.split(':')[0].strip() if ':' in sector else sector
+                
+                # Find corresponding direct impact using sector code
+                direct_impact = direct_impacts.get(sector_code, 0)
+                
+                # Leontief-only = total - direct
+                leontief_impact = total_impact - direct_impact
+                if abs(leontief_impact) > 0.01:  # Threshold for significance
+                    leontief_only_impacts[sector] = leontief_impact
+            
+            return leontief_only_impacts
+            
+        except Exception as e:
+            print(f"Warning: Could not calculate Leontief-only impacts: {str(e)}")
+            return leontief_only_impacts
     
     def _combine_impacts(self, direct: Dict[str, float], indirect: Dict[str, float]) -> Dict[str, float]:
         """Combine direct and indirect impacts."""
@@ -242,7 +372,7 @@ class SupplyChainAnalyzer:
                 analysis = self.analyze_demand_reduction_impact(
                     sector_code, 
                     reduction_amount, 
-                    include_indirect=True
+                    analysis_type="full"
                 )
                 
                 sector_label = f"{sector_code}: {sector_name}"
@@ -285,7 +415,7 @@ class SupplyChainAnalyzer:
             steel_analysis = self.analyze_demand_reduction_impact(
                 steel_code, 
                 1000,  # 1000 billion won reduction
-                include_indirect=True
+                analysis_type="full"
             )
             
             # Focus on coal-related impacts

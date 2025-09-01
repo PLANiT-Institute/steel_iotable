@@ -117,15 +117,48 @@ class IODataLoader:
                 return
                 
             # Get the intermediate transaction part (exclude final demand columns)
-            # Assume final demand starts after intermediate sectors
+            # Assume intermediate sectors are square matrix at beginning
             n_sectors = min(self.transaction_table.shape[0], self.transaction_table.shape[1])
             intermediate_table = self.transaction_table.iloc[:n_sectors, :n_sectors]
             
-            # Calculate total output (row sums)
-            total_output = intermediate_table.sum(axis=1)
+            # Filter out accounting totals from intermediate table
+            accounting_totals = ['9590', '9519', '9520']
+            accounting_indices = []
             
-            # Calculate input coefficients: A[i,j] = X[i,j] / X[j]
-            self.input_coefficients = intermediate_table.div(total_output, axis=1).fillna(0)
+            # Find indices of accounting totals
+            for i, idx in enumerate(intermediate_table.index):
+                if isinstance(idx, tuple) and len(idx) >= 1:
+                    sector_code = str(idx[0]).strip()
+                    if sector_code in accounting_totals:
+                        accounting_indices.append(i)
+                        print(f"DEBUG: Found accounting total at index {i}: {idx}")
+            
+            # TEMPORARILY DISABLE filtering to fix timeout issue
+            # Accounting total filtering temporarily disabled
+            
+            # Calculate total output for each sector (should include final demand)
+            # For proper I-O analysis, total output = intermediate demand + final demand
+            # But if we only have transaction table, use row sums as proxy for total output
+            total_output_intermediate = intermediate_table.sum(axis=0)  # Column sums for intermediate demand
+            
+            # TEMPORARILY use simple approach without filtering
+            if self.transaction_table.shape[1] > n_sectors:
+                # Use full row sums as total output (includes final demand)
+                total_output = self.transaction_table.iloc[:n_sectors, :].sum(axis=1)
+                print("Using full row sums (including final demand) for total output")
+            else:
+                # Fallback to column sums of intermediate table
+                total_output = intermediate_table.sum(axis=0)
+                print("Using intermediate column sums for total output (may underestimate)")
+            
+            # Debug output disabled
+            
+            # Calculate input coefficients: A[i,j] = X[i,j] / X[j] where X[j] is total output of sector j
+            self.input_coefficients = intermediate_table.div(total_output, axis=0).fillna(0)
+            
+            # Additional validation
+            print(f"Total output range: {total_output.min():.2f} to {total_output.max():.2f}")
+            print(f"Input coefficient range: {self.input_coefficients.min().min():.6f} to {self.input_coefficients.max().max():.6f}")
             
             print(f"Calculated input coefficients: {self.input_coefficients.shape}")
             
@@ -136,16 +169,34 @@ class IODataLoader:
     def _extract_sector_info(self):
         """Extract sector codes and names from the loaded data."""
         try:
+            # print("DEBUG: Starting sector extraction...")
+            
             if self.transaction_table is not None:
-                # Extract from transaction table index
+                # Debug disabled for performance
+                
+                # Extract from transaction table index, excluding accounting totals
+                accounting_totals = ['9590', '9519', '9520', '9790']
+                extracted_count = 0
                 for idx in self.transaction_table.index:
                     if isinstance(idx, tuple) and len(idx) >= 2:
                         code = str(idx[0]).strip()
                         name = str(idx[1]).strip()
+                        
+                        # Skip accounting totals and value-added components
+                        if (code in accounting_totals or 
+                            any(total in name for total in ['중간투입계', '소계', '총투입계']) or
+                            code.startswith('96') or  # Value-added components
+                            code.startswith('97') or  # More accounting totals
+                            code.startswith('99')):   # Final demand components
+                            continue
+                        
                         if code != 'nan' and name != 'nan':
                             self.sector_codes.append(code)
                             self.sector_names.append(f"{code}: {name}")
                             self.sector_mapping[code] = name
+                            extracted_count += 1
+                
+                print(f"Extracted {extracted_count} sectors (excluding accounting totals)")
             
             elif self.input_coefficients is not None:
                 # Extract from input coefficients index
@@ -158,10 +209,10 @@ class IODataLoader:
                             self.sector_names.append(f"{code}: {name}")
                             self.sector_mapping[code] = name
             
-            print(f"Extracted {len(self.sector_codes)} sectors")
+            print(f"Final extracted sectors: {len(self.sector_codes)}")
             
         except Exception as e:
-            print(f"Warning: Could not extract sector info: {str(e)}")
+            print(f"WARNING: Could not extract sector info: {str(e)}")
             # Create fallback sector list
             self.sector_codes = [f"{i:04d}" for i in range(1, 398)]
             self.sector_names = [f"{code}: Sector {code}" for code in self.sector_codes]

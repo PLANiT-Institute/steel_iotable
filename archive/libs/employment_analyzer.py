@@ -137,34 +137,33 @@ class EmploymentAnalyzer:
             print(f"Warning: Region '{target_region}' not found. Using '전지역'")
             target_region = '전지역'
         
+        # Filter out accounting totals
+        accounting_totals = ['9590', '9519', '9520', '중간투입계', '소계']
+        
         for sector_code, output_change in sector_impacts.items():
-            # Find matching sector in employment data
+            # Skip accounting totals - extract sector code from "code: name" format
+            actual_sector_code = sector_code.split(':')[0].strip() if ':' in sector_code else sector_code
+            if actual_sector_code in accounting_totals or any(total in sector_code for total in accounting_totals):
+                continue
+            
+            # Find matching sector in employment data - use basic sector directly
             sector_match = None
             
             # Try exact code match first
-            if sector_code in self.sector_mapping:
-                sector_match = self.sector_mapping[sector_code]
+            if actual_sector_code in self.sector_mapping:
+                sector_match = self.sector_mapping[actual_sector_code]
             else:
                 # Try partial matching
                 for sector in self.sectors:
-                    if sector_code in sector or sector.startswith(sector_code):
+                    if actual_sector_code in sector:
                         sector_match = sector
                         break
-                
-                # Try 2-digit prefix matching for basic to intermediate conversion
-                if not sector_match and len(sector_code) >= 2:
-                    prefix = sector_code[:2]
-                    for sector in self.sectors:
-                        if sector.startswith(prefix):
-                            sector_match = sector
-                            break
             
             if sector_match and sector_match in self.employment_coefficients.index:
                 employment_coeff = self.employment_coefficients.loc[sector_match, target_region]
                 employment_change = output_change * employment_coeff
-                employment_impacts[sector_match] = employment_change
-            else:
-                print(f"Warning: No employment coefficient found for sector {sector_code}")
+                # Use the original sector_code (basic sector) as key, not the employment sector label
+                employment_impacts[sector_code] = employment_change
         
         return employment_impacts
     
@@ -198,7 +197,9 @@ class EmploymentAnalyzer:
                     else:
                         intermediate_impacts[matching_sector] = impact
                 else:
-                    print(f"Warning: No intermediate sector found for basic sector {basic_code}")
+                    # Only show warning for debugging - these are expected for some sectors (8xx, 9xx series)
+                    if basic_code not in ['841', '842', '843', '851', '852', '861', '862', '871', '872', '873', '879', '880', '911', '912', '913', '919', '920', '9519', '9520', '9590']:
+                        print(f"Warning: No intermediate sector found for basic sector {basic_code}")
         
         return intermediate_impacts
     
