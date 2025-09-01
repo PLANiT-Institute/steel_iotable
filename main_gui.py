@@ -104,12 +104,18 @@ def main():
         with tabs[0]:
             st.subheader("📊 Complete Analysis Summary")
             
-            # Overall comparison table
-            summary_data = []
-            for coeff_type in coefficient_types:
+            # Overall comparison table - separate economic and job effects
+            economic_summary = []
+            job_summary = []
+            
+            # Separate data by effect type
+            economic_coeffs = ["A", "Am", "Ad", "indirect_prod", "indirect_import", "value_added"]
+            job_coeffs = ["jobcoeff", "directemploycoeff"]
+            
+            for coeff_type in economic_coeffs:
                 if all_results[coeff_type]:
                     results = all_results[coeff_type]
-                    summary_data.append({
+                    economic_summary.append({
                         'Coefficient Type': f"{coeff_names[coeff_type]} ({coeff_type})",
                         'Total Impact': f"{results['total_impact']:,.0f}",
                         'Affected Sectors': results['num_affected_sectors'],
@@ -117,9 +123,45 @@ def main():
                         'Top Impact Value': f"{results['impacts'][0]['impact']:,.0f}" if results['impacts'] else '0'
                     })
             
-            if summary_data:
-                summary_df = pd.DataFrame(summary_data)
-                st.dataframe(summary_df, width='stretch')
+            for coeff_type in job_coeffs:
+                if all_results[coeff_type]:
+                    results = all_results[coeff_type]
+                    job_summary.append({
+                        'Coefficient Type': f"{coeff_names[coeff_type]} ({coeff_type})",
+                        'Total Jobs': f"{results['total_impact']:,.0f}",
+                        'Affected Sub-sectors': results['num_affected_sectors'],
+                        'Top Impact Sub-sector': results['impacts'][0]['sector_name'] if results['impacts'] else 'None',
+                        'Top Impact Value': f"{results['impacts'][0]['impact']:,.0f}" if results['impacts'] else '0'
+                    })
+            
+            # Display tables
+            if economic_summary and job_summary:
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    st.markdown("**💰 Economic Effects Summary**")
+                    economic_df = pd.DataFrame(economic_summary)
+                    st.dataframe(economic_df, width='stretch')
+                
+                with col2:
+                    st.markdown("**👥 Employment Effects Summary**")
+                    job_df = pd.DataFrame(job_summary)
+                    st.dataframe(job_df, width='stretch')
+            
+            elif economic_summary:
+                st.markdown("**💰 Economic Effects Summary**")
+                economic_df = pd.DataFrame(economic_summary)
+                st.dataframe(economic_df, width='stretch')
+                
+            elif job_summary:
+                st.markdown("**👥 Employment Effects Summary**")
+                job_df = pd.DataFrame(job_summary)
+                st.dataframe(job_df, width='stretch')
+            
+            # Combined summary for download (maintain backward compatibility)
+            all_summary_data = economic_summary + job_summary
+            if all_summary_data:
+                summary_df = pd.DataFrame(all_summary_data)
                 
                 # Combined results for download
                 st.subheader("📥 Download Complete Analysis")
@@ -196,30 +238,79 @@ def main():
                             mime="text/csv"
                         )
                 
-                # Detailed comparison charts
+                # Detailed comparison charts - separate economic and job effects
                 st.subheader("📈 Impact Comparison")
                 
-                # Create comparison chart data
-                chart_data = []
-                for coeff_type in coefficient_types:
+                # Separate coefficient types by category
+                economic_coeffs = ["A", "Am", "Ad", "indirect_prod", "indirect_import", "value_added"]
+                job_coeffs = ["jobcoeff", "directemploycoeff"]
+                
+                # Create economic effects chart data
+                economic_chart_data = []
+                for coeff_type in economic_coeffs:
                     if all_results[coeff_type]:
-                        chart_data.append({
+                        economic_chart_data.append({
                             'Coefficient Type': coeff_names[coeff_type],
                             'Total Impact': all_results[coeff_type]['total_impact'],
                             'Affected Sectors': all_results[coeff_type]['num_affected_sectors']
                         })
                 
-                if chart_data:
-                    chart_df = pd.DataFrame(chart_data)
-                    
+                # Create job effects chart data
+                job_chart_data = []
+                for coeff_type in job_coeffs:
+                    if all_results[coeff_type]:
+                        job_chart_data.append({
+                            'Coefficient Type': coeff_names[coeff_type],
+                            'Total Jobs': all_results[coeff_type]['total_impact'],
+                            'Affected Sub-sectors': all_results[coeff_type]['num_affected_sectors']
+                        })
+                
+                # Display charts
+                if economic_chart_data and job_chart_data:
+                    # Two separate sections for economic vs job effects
                     col1, col2 = st.columns(2)
+                    
                     with col1:
-                        st.bar_chart(chart_df.set_index('Coefficient Type')['Total Impact'])
-                        st.caption("Total Impact by Coefficient Type")
+                        st.markdown("**💰 Economic Effects**")
+                        economic_df = pd.DataFrame(economic_chart_data)
+                        st.caption("Total Economic Impact by Type")
+                        st.bar_chart(economic_df.set_index('Coefficient Type')['Total Impact'])
+                        
+                        st.caption("Economic Sectors Affected")
+                        st.bar_chart(economic_df.set_index('Coefficient Type')['Affected Sectors'])
+                        
                     
                     with col2:
-                        st.bar_chart(chart_df.set_index('Coefficient Type')['Affected Sectors'])
-                        st.caption("Number of Affected Sectors")
+                        st.markdown("**👥 Employment Effects**")
+                        job_df = pd.DataFrame(job_chart_data)
+                        st.caption("Total Jobs Created/Affected")
+                        st.bar_chart(job_df.set_index('Coefficient Type')['Total Jobs'])
+                        
+                        st.caption("Employment Sub-sectors Affected")
+                        st.bar_chart(job_df.set_index('Coefficient Type')['Affected Sub-sectors'])
+                        
+                
+                elif economic_chart_data:
+                    # Only economic data available
+                    economic_df = pd.DataFrame(economic_chart_data)
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        st.bar_chart(economic_df.set_index('Coefficient Type')['Total Impact'])
+                        st.caption("Total Economic Impact by Type")
+                    with col2:
+                        st.bar_chart(economic_df.set_index('Coefficient Type')['Affected Sectors'])
+                        st.caption("Economic Sectors Affected")
+                        
+                elif job_chart_data:
+                    # Only job data available  
+                    job_df = pd.DataFrame(job_chart_data)
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        st.bar_chart(job_df.set_index('Coefficient Type')['Total Jobs'])
+                        st.caption("Total Jobs Created/Affected")
+                    with col2:
+                        st.bar_chart(job_df.set_index('Coefficient Type')['Affected Sub-sectors'])
+                        st.caption("Employment Sub-sectors Affected")
             else:
                 st.warning("No results available for summary.")
         
