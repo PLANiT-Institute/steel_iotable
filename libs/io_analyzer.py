@@ -14,8 +14,8 @@ class IOTableAnalyzer:
         print("Loading I-O Table data...")
         
         # Load mapping sheet
-        self.mapping = pd.read_excel(self.data_file, sheet_name='mapping')
-        print(f"Loaded {len(self.mapping)} sectors from mapping sheet")
+        self.mapping = pd.read_excel(self.data_file, sheet_name='basicmap')
+        print(f"Loaded {len(self.mapping)} sectors from basicmap sheet")
         
         # Load direct input coefficients (A)
         df_A = pd.read_excel(self.data_file, sheet_name='directinputcoeff_A')
@@ -137,8 +137,8 @@ class IOTableAnalyzer:
         # Calculate direct effects: coefficient * demand_change
         direct_impacts = selected_coeffs[target_sector] * demand_change
         
-        # Remove zero or near-zero impacts
-        significant_impacts = direct_impacts[abs(direct_impacts) > 1e-6]
+        # Remove zero or near-zero impacts and NaN values
+        significant_impacts = direct_impacts[(abs(direct_impacts) > 1e-6) & pd.notna(direct_impacts)]
         
         # Create results with sector names
         results = []

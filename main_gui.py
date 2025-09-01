@@ -168,7 +168,8 @@ def main():
                     )
                 
                 except ImportError:
-                    st.error("Excel export requires openpyxl. Using CSV export instead.")
+                    st.warning("Excel export requires openpyxl. Install with: pip install openpyxl")
+                    st.info("Using CSV export instead.")
                     # Fallback to combined CSV
                     combined_data = []
                     for coeff_type in coefficient_types:
@@ -290,7 +291,11 @@ def main():
                     with col5:
                         st.metric("Mean", f"{impacts_series.mean():,.0f}")
                     with col6:
-                        st.metric("Std Dev", f"{impacts_series.std():,.0f}")
+                        std_val = impacts_series.std()
+                        if pd.notna(std_val):
+                            st.metric("Std Dev", f"{std_val:,.0f}")
+                        else:
+                            st.metric("Std Dev", "N/A")
                         
                 else:
                     st.warning(f"No significant impacts found for {coeff_names[coeff_type]} analysis.")

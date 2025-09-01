@@ -46,7 +46,7 @@ def main():
                     if sector_int < 1000:
                         sector_code = f"0{sector_int}"
                     else:
-                        sector_code = sector_int
+                        sector_code = str(sector_int)
                 except ValueError:
                     # Already a string, use as is
                     sector_code = sector_input
