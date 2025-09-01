@@ -6,7 +6,11 @@ class IOTableAnalyzer:
         """Initialize the I-O Table Analyzer with clean data structure."""
         self.data_file = data_file
         self.mapping = None
-        self.coefficients = {}  # Will store A, Am, Ad
+        self.codemap = None
+        self.subsectormap = None
+        self.coefficients = {}  # Will store A, Am, Ad, job coefficients
+        self.basic_to_subsector = {}  # Mapping from basic sector to sub-sector
+        self.subsector_to_name = {}  # Mapping from sub-sector code to name
         self.load_data()
     
     def load_data(self):
@@ -49,6 +53,53 @@ class IOTableAnalyzer:
         df_value_added = pd.read_excel(self.data_file, sheet_name='valueaddedcoeff')
         self.coefficients['value_added'] = df_value_added.set_index('code')
         print(f"Loaded value-added coefficient matrix: {self.coefficients['value_added'].shape}")
+        
+        # Load job coefficients (total job creation)
+        df_jobcoeff = pd.read_excel(self.data_file, sheet_name='jobcoeff')
+        self.coefficients['jobcoeff'] = df_jobcoeff.set_index('code')
+        print(f"Loaded job coefficient matrix: {self.coefficients['jobcoeff'].shape}")
+        
+        # Load direct employment coefficients
+        df_directemploy = pd.read_excel(self.data_file, sheet_name='directemploycoeff')
+        self.coefficients['directemploycoeff'] = df_directemploy.set_index('code')
+        print(f"Loaded direct employment coefficient matrix: {self.coefficients['directemploycoeff'].shape}")
+        
+        # Load codemap for basic-to-subsector mapping
+        self.codemap = pd.read_excel(self.data_file, sheet_name='codemap')
+        print(f"Loaded codemap with {len(self.codemap)} sector mappings")
+        
+        # Load subsectormap for sub-sector names
+        self.subsectormap = pd.read_excel(self.data_file, sheet_name='subsectormap')
+        print(f"Loaded subsectormap with {len(self.subsectormap)} sub-sector names")
+        
+        # Create sub-sector code to name mapping
+        for _, row in self.subsectormap.iterrows():
+            subsector_code = row['code']
+            subsector_name = row['name']
+            self.subsector_to_name[subsector_code] = subsector_name
+        
+        print(f"Created sub-sector-to-name mapping for {len(self.subsector_to_name)} sub-sectors")
+        
+        # Create basic-to-subsector mapping
+        for _, row in self.codemap.iterrows():
+            basic_code = row['Basic']
+            subsector_code = row['Sub-sector']
+            
+            # Format basic code consistently (same logic as main mapping)
+            if basic_code < 1000:
+                formatted_basic = f"0{basic_code}"
+            else:
+                formatted_basic = str(basic_code)
+                
+            # Format subsector code (typically 2-3 digit codes)
+            if subsector_code < 100:
+                formatted_subsector = f"0{subsector_code:02d}"  # Ensure 3 digits with leading zeros
+            else:
+                formatted_subsector = f"{subsector_code:03d}"
+                
+            self.basic_to_subsector[formatted_basic] = formatted_subsector
+        
+        print(f"Created basic-to-subsector mapping for {len(self.basic_to_subsector)} sectors")
         
         # Create code-to-product mapping dictionary with proper string formatting
         self.code_to_product = {}
@@ -107,35 +158,56 @@ class IOTableAnalyzer:
         Returns:
             Dictionary with analysis results
         """
-        if target_sector not in self.code_to_product:
+        # Convert target_sector to the proper format used internally
+        if isinstance(target_sector, str) and target_sector.isdigit():
+            target_sector_int = int(target_sector)
+        elif isinstance(target_sector, int):
+            target_sector_int = target_sector
+        else:
+            target_sector_int = None
+            
+        # Check both string and integer formats
+        if target_sector not in self.code_to_product and target_sector_int not in self.code_to_product:
             raise ValueError(f"Sector {target_sector} not found in data")
+            
+        # Use the format that exists in the mapping
+        if target_sector in self.code_to_product:
+            final_target_sector = target_sector
+        else:
+            final_target_sector = target_sector_int
         
         if coeff_type not in self.coefficients:
             raise ValueError(f"Coefficient type '{coeff_type}' not available. Choose from: {list(self.coefficients.keys())}")
         
-        target_product = self.code_to_product[target_sector]
+        target_product = self.code_to_product[final_target_sector]
         coeff_names = {
             'A': 'Direct Total', 
             'Am': 'Direct Import', 
             'Ad': 'Direct Domestic',
             'indirect_prod': 'Indirect Production (I-Ad)⁻¹',
             'indirect_import': 'Indirect Import',
-            'value_added': 'Value-Added'
+            'value_added': 'Value-Added',
+            'jobcoeff': 'Total Job Creation',
+            'directemploycoeff': 'Direct Employment'
         }
         
         if not quiet:
-            print(f"\nAnalyzing {coeff_names[coeff_type]} effects for {target_sector}: {target_product}")
+            print(f"\nAnalyzing {coeff_names[coeff_type]} effects for {final_target_sector}: {target_product}")
             print(f"Demand change: {demand_change:,.0f}")
             print(f"Using coefficient type: {coeff_type} ({coeff_names[coeff_type]})")
         
-        # Use target_sector directly as it's already in the correct format
+        # Handle job coefficients which use sub-sector mapping
+        if coeff_type in ['jobcoeff', 'directemploycoeff']:
+            return self._calculate_job_effects(final_target_sector, demand_change, coeff_type, coeff_names[coeff_type], quiet)
+        
+        # Use final_target_sector for regular coefficients  
         selected_coeffs = self.coefficients[coeff_type]
         
-        if target_sector not in selected_coeffs.columns:
-            raise ValueError(f"Column for sector {target_sector} not found in {coeff_type} coefficient matrix")
+        if final_target_sector not in selected_coeffs.columns:
+            raise ValueError(f"Column for sector {final_target_sector} not found in {coeff_type} coefficient matrix")
         
         # Calculate direct effects: coefficient * demand_change
-        direct_impacts = selected_coeffs[target_sector] * demand_change
+        direct_impacts = selected_coeffs[final_target_sector] * demand_change
         
         # Remove zero or near-zero impacts and NaN values
         significant_impacts = direct_impacts[(abs(direct_impacts) > 1e-6) & pd.notna(direct_impacts)]
@@ -157,7 +229,7 @@ class IOTableAnalyzer:
         total_impact = sum([r['impact'] for r in results])
         
         return {
-            'target_sector': target_sector,
+            'target_sector': final_target_sector,
             'target_product': target_product,
             'demand_change': demand_change,
             'coeff_type': coeff_type,
@@ -187,3 +259,73 @@ class IOTableAnalyzer:
         
         if len(results['impacts']) > 20:
             print(f"\n... and {len(results['impacts']) - 20} more sectors with smaller impacts")
+    
+    def _calculate_job_effects(self, target_sector, demand_change: float, coeff_type: str, coeff_name: str, quiet: bool = False) -> Dict[str, any]:
+        """
+        Calculate job effects using sub-sector mapping.
+        Job coefficients use sub-sector codes, so we need to map basic sector to sub-sector first.
+        """
+        target_product = self.code_to_product[target_sector]
+        
+        # Convert target_sector to string format for basic_to_subsector mapping
+        if isinstance(target_sector, int):
+            target_sector_str = str(target_sector)
+        else:
+            target_sector_str = target_sector
+            
+        # Find the sub-sector code for this basic sector
+        if target_sector_str not in self.basic_to_subsector:
+            raise ValueError(f"Sub-sector mapping not found for basic sector {target_sector_str}")
+        
+        subsector_code = self.basic_to_subsector[target_sector_str]
+        
+        if not quiet:
+            print(f"Basic sector {target_sector} maps to sub-sector {subsector_code}")
+        
+        # Get job coefficient matrix
+        selected_coeffs = self.coefficients[coeff_type]
+        
+        # Check if sub-sector column exists in job coefficient matrix
+        if subsector_code not in selected_coeffs.columns:
+            raise ValueError(f"Sub-sector column {subsector_code} not found in {coeff_type} coefficient matrix")
+        
+        # Calculate job effects: coefficient * demand_change
+        # Note: Job coefficients represent jobs per unit of output, so result is in number of jobs
+        job_impacts = selected_coeffs[subsector_code] * demand_change
+        
+        # Remove zero or near-zero impacts and NaN values
+        significant_impacts = job_impacts[(abs(job_impacts) > 1e-6) & pd.notna(job_impacts)]
+        
+        # Create results with sector names (using sub-sector mapping for job results)
+        results = []
+        for sector_code, impact in significant_impacts.items():
+            # For job coefficients, sector_code represents the sub-sector experiencing job impact
+            # Use subsectormap to get proper sub-sector names
+            if sector_code in self.subsector_to_name:
+                sector_name = f"{self.subsector_to_name[sector_code]}"
+            else:
+                sector_name = f"Sub-sector {sector_code}"  # Fallback if name not found
+            
+            results.append({
+                'sector_code': sector_code,
+                'sector_name': sector_name,
+                'impact': impact
+            })
+        
+        # Sort by absolute impact (descending)
+        results.sort(key=lambda x: abs(x['impact']), reverse=True)
+        
+        # Calculate summary statistics
+        total_impact = sum([r['impact'] for r in results])
+        
+        return {
+            'target_sector': target_sector,
+            'target_product': target_product,
+            'subsector_code': subsector_code,
+            'demand_change': demand_change,
+            'coeff_type': coeff_type,
+            'coeff_name': coeff_name,
+            'impacts': results,
+            'total_impact': total_impact,
+            'num_affected_sectors': len(results)
+        }

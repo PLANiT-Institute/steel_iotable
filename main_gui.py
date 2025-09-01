@@ -54,16 +54,18 @@ def main():
     # Main content area with tabs
     if analyze_button or st.session_state.get('auto_analyze', False):
         
-        # Calculate all coefficient types
+        # Calculate all coefficient types including job coefficients
         all_results = {}
-        coefficient_types = ["A", "Am", "Ad", "indirect_prod", "indirect_import", "value_added"]
+        coefficient_types = ["A", "Am", "Ad", "indirect_prod", "indirect_import", "value_added", "jobcoeff", "directemploycoeff"]
         coeff_names = {
             "A": "Direct Total",
             "Am": "Direct Import", 
             "Ad": "Direct Domestic",
             "indirect_prod": "Indirect Production",
             "indirect_import": "Indirect Import",
-            "value_added": "Value-Added"
+            "value_added": "Value-Added",
+            "jobcoeff": "Total Job Creation",
+            "directemploycoeff": "Direct Employment"
         }
         
         with st.spinner("Calculating all coefficient effects..."):

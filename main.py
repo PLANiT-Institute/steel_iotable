@@ -25,15 +25,17 @@ def main():
         elif choice == '2':
             try:
                 print("\nCoefficient types:")
-                print("A              - Direct Total coefficients")
-                print("Am             - Direct Import coefficients") 
-                print("Ad             - Direct Domestic coefficients")
-                print("indirect_prod  - Indirect Production (I-Ad)⁻¹")
-                print("indirect_import- Indirect Import coefficients")
-                print("value_added    - Value-Added coefficients")
+                print("A                 - Direct Total coefficients")
+                print("Am                - Direct Import coefficients") 
+                print("Ad                - Direct Domestic coefficients")
+                print("indirect_prod     - Indirect Production (I-Ad)⁻¹")
+                print("indirect_import   - Indirect Import coefficients")
+                print("value_added       - Value-Added coefficients")
+                print("jobcoeff          - Total Job Creation coefficients")
+                print("directemploycoeff - Direct Employment coefficients")
                 
                 coeff_type = input("Select coefficient type: ").strip()
-                valid_types = ['A', 'Am', 'Ad', 'indirect_prod', 'indirect_import', 'value_added']
+                valid_types = ['A', 'Am', 'Ad', 'indirect_prod', 'indirect_import', 'value_added', 'jobcoeff', 'directemploycoeff']
                 if coeff_type not in valid_types:
                     print("Invalid coefficient type. Using 'A' as default.")
                     coeff_type = 'A'
