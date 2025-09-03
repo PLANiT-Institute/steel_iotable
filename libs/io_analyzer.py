@@ -290,8 +290,8 @@ class IOTableAnalyzer:
             raise ValueError(f"Sub-sector column {subsector_code} not found in {coeff_type} coefficient matrix")
         
         # Calculate job effects: coefficient * demand_change
-        # Note: Job coefficients represent jobs per unit of output, so result is in number of jobs
-        job_impacts = selected_coeffs[subsector_code] * demand_change
+        # Note: Job coefficients are in 명/10억원 (people per billion won), so we need to scale
+        job_impacts = selected_coeffs[subsector_code] * (demand_change / 1_000_000_000)
         
         # Remove zero or near-zero impacts and NaN values
         significant_impacts = job_impacts[(abs(job_impacts) > 1e-6) & pd.notna(job_impacts)]
