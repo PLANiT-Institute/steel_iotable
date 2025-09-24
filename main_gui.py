@@ -15,46 +15,260 @@ def load_analyzer():
     return IOTableAnalyzer()
 
 def main():
-    st.title("🏭 Steel-Coal I-O Table Direct Effects Analyzer")
+    st.title("🏭 Steel Input Output Analysis Results")
     st.markdown("---")
     
     # Load analyzer
     with st.spinner("Loading I-O Table data..."):
         analyzer = load_analyzer()
-    
+        # Load demand change data for scenario selection
+        try:
+            analyzer.load_damageshock_data()
+            shock_available = True
+        except Exception as e:
+            shock_available = False
+            st.warning(f"Demand change data not available: {e}")
+
+        # Load hydrogen coefficient data
+        try:
+            analyzer.load_hydrogen_coefficient()
+            hydrogen_available = True
+        except Exception as e:
+            hydrogen_available = False
+            st.warning(f"Hydrogen coefficient data not available: {e}")
+
     # Sidebar for inputs
     st.sidebar.header("Analysis Parameters")
-    
-    # Get sector options (already formatted for display)
-    sector_options = analyzer.get_sector_options()
-    sector_list = list(sector_options.values())  # These are already formatted as "code: name"
-    
-    # Input controls
-    selected_sector_display = st.sidebar.selectbox(
-        "Select Sector",
-        options=sector_list,
-        index=0,
-        help="Choose the target sector for analysis"
+
+    # Demand change source selection section
+    st.sidebar.markdown("### 📊 Demand Change Source")
+
+    demand_source = st.sidebar.radio(
+        "Select demand change source:",
+        ["Manual Input", "Demand Change Scenario"],
+        help="Choose between manual input or predefined demand change scenarios"
     )
-    
-    # Extract formatted sector code using analyzer method
-    selected_sector = analyzer.get_sector_from_display(selected_sector_display)
-    
-    demand_change = st.sidebar.number_input(
-        "Demand Change",
-        value=1000000,
-        step=100000,
-        format="%d",
-        help="Enter the change in final demand (positive or negative)"
-    )
-    
+
+    # Initialize auto_selected_sector variable
+    auto_selected_sector = None
+
+    if demand_source == "Manual Input":
+        demand_change = st.sidebar.number_input(
+            "Demand Change (단위: 백만원)",
+            value=1000000,
+            step=100000,
+            format="%d",
+            help="Enter the change in final demand (positive or negative) (단위: 백만원)"
+        )
+        scenario_info = None
+
+    elif demand_source == "Demand Change Scenario" and shock_available:
+        # Get available scenarios and columns
+        try:
+            scenarios = analyzer.get_shock_scenarios()
+            shock_columns = analyzer.get_shock_columns()
+
+            # Filter out 2022, 2023, 2024 from shock_columns
+            if shock_columns:
+                shock_columns = [col for col in shock_columns if col not in [2022, 2023, 2024, '2022', '2023', '2024']]
+
+            if scenarios and shock_columns:
+                selected_scenario = st.sidebar.selectbox(
+                    "Select Scenario (내역)",
+                    scenarios,
+                    help="Choose a demand change scenario from the data sheet"
+                )
+
+                # Auto-select sector based on scenario
+                if "석탄사용감소량" in selected_scenario:
+                    auto_selected_sector = "0611"
+                elif any(keyword in selected_scenario for keyword in ["재생에너지", "부생가스전력", "전기로"]):
+                    auto_selected_sector = "4506"
+                elif "수소사용량" in selected_scenario:
+                    # For hydrogen usage, we'll handle this specially
+                    auto_selected_sector = None  # Will be handled by hydrogen coefficient selection
+
+                selected_column = st.sidebar.selectbox(
+                    "Select Year/Column",
+                    shock_columns,
+                    help="Choose the year or column for the shock value"
+                )
+
+                # Get the demand change value
+                try:
+                    demand_change = analyzer.get_shock_value(selected_scenario, selected_column)
+                    st.sidebar.success(f"Value: {demand_change/1000:,.0f} (백만원)")
+                    scenario_info = f"{selected_scenario} ({selected_column})"
+
+                    # Check if this is hydrogen usage scenario
+                    is_hydrogen_scenario = "수소사용량" in selected_scenario and hydrogen_available
+
+                except Exception as e:
+                    st.sidebar.error(f"Error getting demand change value: {e}")
+                    demand_change = 1000000
+                    scenario_info = None
+                    is_hydrogen_scenario = False
+            else:
+                st.sidebar.error("No demand change scenarios or columns available")
+                demand_change = 1000000
+                scenario_info = None
+                auto_selected_sector = None
+
+        except Exception as e:
+            st.sidebar.error(f"Error loading demand change data: {e}")
+            demand_change = 1000000
+            scenario_info = None
+            auto_selected_sector = None
+
+    else:
+        # Fallback to manual input if SHOCK not available
+        demand_change = st.sidebar.number_input(
+            "Demand Change (단위: 백만원)",
+            value=1000000,
+            step=100000,
+            format="%d",
+            help="Enter the change in final demand (positive or negative, 단위: 백만원)"
+        )
+        st.sidebar.caption("단위: 백만원")
+        scenario_info = None
+        auto_selected_sector = None
+
+    # Check if this is hydrogen scenario for UI visibility
+    is_hydrogen_scenario_for_ui = False
+    if (demand_source == "Demand Change Scenario" and shock_available and
+        'selected_scenario' in locals() and "수소사용량" in selected_scenario and hydrogen_available):
+        is_hydrogen_scenario_for_ui = True
+
+    # Sector selection section (hide for hydrogen scenarios)
+    if not is_hydrogen_scenario_for_ui:
+        st.sidebar.markdown("### 🏭 Sector Selection")
+
+        # Get sector options (already formatted for display)
+        sector_options = analyzer.get_sector_options()
+        sector_list = list(sector_options.values())  # These are already formatted as "code: name"
+
+        # Auto-select sector index based on scenario if applicable
+        default_index = 0
+        if demand_source == "Demand Change Scenario" and shock_available and auto_selected_sector:
+            # Find the index of the auto-selected sector in the list
+            for i, sector_display in enumerate(sector_list):
+                if sector_display.startswith(auto_selected_sector + ":"):
+                    default_index = i
+                    st.sidebar.info(f"Auto-selected sector: {auto_selected_sector}")
+                    break
+
+        # Input controls
+        selected_sector_display = st.sidebar.selectbox(
+            "Select Sector",
+            options=sector_list,
+            index=default_index,
+            help="Choose the target sector for analysis (auto-selected based on scenario)"
+        )
+
+        # Extract formatted sector code using analyzer method
+        selected_sector = analyzer.get_sector_from_display(selected_sector_display)
+    else:
+        # For hydrogen scenarios, we don't need sector selection
+        selected_sector = None
+        selected_sector_display = "Hydrogen Analysis (All Sectors)"
+
     # Analysis button - will calculate all coefficient types
     analyze_button = st.sidebar.button("🔍 Analyze All Effects", type="primary")
     
     # Main content area with tabs
     if analyze_button or st.session_state.get('auto_analyze', False):
         
-        # Calculate all coefficient types including job coefficients
+        # Check if this is hydrogen scenario
+        if 'is_hydrogen_scenario' in locals() and is_hydrogen_scenario:
+            # Handle hydrogen analysis specially
+            with st.spinner("Calculating hydrogen effects..."):
+                try:
+                    hydrogen_results = analyzer.calculate_hydrogen_effects(demand_change, quiet=True)
+
+                    # Display hydrogen results
+                    st.subheader("🔋 Hydrogen Usage Analysis")
+
+                    col1, col2, col3 = st.columns(3)
+                    with col1:
+                        st.metric("Total Impact", f"{hydrogen_results['total_impact']:,.0f}")
+                    with col2:
+                        st.metric("Sector-Category Combinations", hydrogen_results['num_affected_sectors'])
+                    with col3:
+                        st.metric("Demand Change Multiplier", f"{demand_change:,.0f}")
+
+                    # Results table - Matrix format: rows=sectors, columns=categories, values=impact
+                    if hydrogen_results['impacts']:
+                        # Get impact matrix (main output format)
+                        impact_matrix = analyzer.get_hydrogen_impact_matrix(demand_change)
+
+                        # Format for display
+                        display_df = impact_matrix.copy()
+                        for col in ['Production (백만원)', 'Storage (백만원)', 'Transportation (백만원)', 'Utilization (백만원)', 'Total (백만원)']:
+                            display_df[col] = display_df[col].apply(lambda x: f"{x:,.2f}")
+
+                        # Display table
+                        st.dataframe(display_df, use_container_width=True, height=600)
+
+                        # Show column totals
+                        st.subheader("Percentage allocated")
+                        col_totals = {}
+                        # 각 컬럼에 맞는 값을 직접 할당하려면 아래처럼 작성하면 됩니다.
+                        col_totals['Production (%)'] = 34.1
+                        col_totals['Storage (%)'] = 10.4
+                        col_totals['Transportation (%)'] = 11.2
+                        col_totals['Utilization (%)'] = 44.4
+                        col_totals['Total (%)'] = 100.0
+
+                        totals_df = pd.DataFrame([col_totals])
+                        totals_df = totals_df.round(2)
+                        st.dataframe(totals_df, use_container_width=True)
+
+                        # Download buttons
+                        col1, col2 = st.columns(2)
+
+                        with col1:
+                            # CSV download with Korean encoding support
+                            import io
+                            csv_buffer = io.StringIO()
+                            impact_matrix.to_csv(csv_buffer, index=False, encoding='utf-8-sig')
+                            st.download_button(
+                                label="📥 Download CSV",
+                                data=csv_buffer.getvalue(),
+                                file_name=f"hydrogen_economic_impact_{demand_change}.csv",
+                                mime="text/csv"
+                            )
+
+                        with col2:
+                            # Excel export using the analyzer's method
+                            if st.button("📊 Generate Excel Report", key="hydrogen_excel"):
+                                with st.spinner("Generating Excel report..."):
+                                    try:
+                                        output_path = analyzer.export_hydrogen_results_to_excel(hydrogen_results)
+                                        st.success(f"Excel report generated!")
+                                        st.info(f"File saved to: {output_path}")
+
+                                        # Read the file for download
+                                        with open(output_path, 'rb') as f:
+                                            excel_data = f.read()
+
+                                        st.download_button(
+                                            label="📥 Download Excel",
+                                            data=excel_data,
+                                            file_name=f"hydrogen_impact_matrix_{demand_change}.xlsx",
+                                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                                        )
+                                    except Exception as e:
+                                        st.error(f"Error generating Excel report: {str(e)}")
+
+                    else:
+                        st.warning("No hydrogen impacts found.")
+
+                except Exception as e:
+                    st.error(f"Error calculating hydrogen effects: {str(e)}")
+
+            return  # Exit early for hydrogen analysis
+
+        # Calculate all coefficient types including job coefficients for regular analysis
         all_results = {}
         coefficient_types = ["A", "Am", "Ad", "indirect_prod", "indirect_import", "value_added", "jobcoeff", "directemploycoeff"]
         coeff_names = {
@@ -84,8 +298,12 @@ def main():
         
         # Display summary
         st.subheader("📊 Analysis Summary")
-        col1, col2, col3, col4 = st.columns(4)
-        
+
+        if scenario_info:
+            col1, col2, col3, col4, col5 = st.columns(5)
+        else:
+            col1, col2, col3, col4 = st.columns(4)
+
         if all_results["A"]:
             with col1:
                 st.metric("Target Sector", f"{selected_sector}")
@@ -95,6 +313,10 @@ def main():
                 st.metric("Demand Change", f"{demand_change:,.0f}")
             with col4:
                 st.metric("Analysis Types", len([r for r in all_results.values() if r is not None]))
+
+            if scenario_info:
+                with col5:
+                    st.metric("Demand Change Scenario", scenario_info)
         
         # Create tabs: Summary first, then each coefficient type
         tab_names = ["📊 Summary"] + [f"{coeff_names[ct]} ({ct})" for ct in coefficient_types]
@@ -118,7 +340,7 @@ def main():
                     economic_summary.append({
                         'Coefficient Type': f"{coeff_names[coeff_type]} ({coeff_type})",
                         'Total Impact': f"{results['total_impact']:,.0f}",
-                        'Affected Sectors': results['num_affected_sectors'],
+                        'Number of Affected Sectors': results['num_affected_sectors'],
                         'Top Impact Sector': results['impacts'][0]['sector_name'] if results['impacts'] else 'None',
                         'Top Impact Value': f"{results['impacts'][0]['impact']:,.0f}" if results['impacts'] else '0'
                     })
@@ -141,22 +363,22 @@ def main():
                 with col1:
                     st.markdown("**💰 Economic Effects Summary**")
                     economic_df = pd.DataFrame(economic_summary)
-                    st.dataframe(economic_df, width='stretch')
+                    st.dataframe(economic_df, use_container_width=True)
                 
                 with col2:
                     st.markdown("**👥 Employment Effects Summary**")
                     job_df = pd.DataFrame(job_summary)
-                    st.dataframe(job_df, width='stretch')
+                    st.dataframe(job_df, use_container_width=True)
             
             elif economic_summary:
                 st.markdown("**💰 Economic Effects Summary**")
                 economic_df = pd.DataFrame(economic_summary)
-                st.dataframe(economic_df, width='stretch')
+                st.dataframe(economic_df, use_container_width=True)
                 
             elif job_summary:
                 st.markdown("**👥 Employment Effects Summary**")
                 job_df = pd.DataFrame(job_summary)
-                st.dataframe(job_df, width='stretch')
+                st.dataframe(job_df, use_container_width=True)
             
             # Combined summary for download (maintain backward compatibility)
             all_summary_data = economic_summary + job_summary
@@ -358,7 +580,7 @@ def main():
                     # Display table
                     st.dataframe(
                         filtered_df,
-                        width='stretch',
+                        width=800,
                         height=400
                     )
                     

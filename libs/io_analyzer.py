@@ -1,5 +1,7 @@
 import pandas as pd
 from typing import Dict
+import os
+from datetime import datetime
 
 class IOTableAnalyzer:
     def __init__(self, data_file: str = 'data/iotable_2020.xlsx'):
@@ -12,7 +14,295 @@ class IOTableAnalyzer:
         self.basic_to_subsector = {}  # Mapping from basic sector to sub-sector
         self.subsector_to_name = {}  # Mapping from sub-sector code to name
         self.load_data()
+        self.load_data()
     
+    def load_damageshock_data(self, damageshock_file: str = 'data/Data_V2.xlsx'):
+        """Load SHOCK data from Data_V2.xlsx for scenario selection."""
+        self.damageshock_file = damageshock_file
+        self.damageshock_data = pd.read_excel(self.damageshock_file, sheet_name='SHOCK', engine='openpyxl')
+        print(f"Loaded damageshock data: {self.damageshock_data.shape}")
+
+    def get_shock_scenarios(self):
+        """Get available shock scenarios from the SHOCK sheet."""
+        if not hasattr(self, 'damageshock_data'):
+            self.load_damageshock_data()
+
+        # Get scenarios from "내역" column
+        scenarios = []
+        if '내역' in self.damageshock_data.columns:
+            scenarios = self.damageshock_data['내역'].dropna().tolist()
+
+        return scenarios
+
+    def get_shock_columns(self):
+        """Get available year/column options from the first row."""
+        if not hasattr(self, 'damageshock_data'):
+            self.load_damageshock_data()
+
+        # Get numeric columns from first row (excluding text columns like "내역")
+        numeric_columns = []
+        for col in self.damageshock_data.columns:
+            if isinstance(col, (int, float)) or (isinstance(col, str) and col.isdigit()):
+                numeric_columns.append(col)
+
+        return numeric_columns
+
+    def get_shock_value(self, scenario_name: str, column_name):
+        """Get specific shock value for given scenario and column."""
+        if not hasattr(self, 'damageshock_data'):
+            self.load_damageshock_data()
+
+        # Find row with matching scenario
+        scenario_row = self.damageshock_data[self.damageshock_data['내역'] == scenario_name]
+
+        if scenario_row.empty:
+            raise ValueError(f"Scenario '{scenario_name}' not found")
+
+        if column_name not in self.damageshock_data.columns:
+            raise ValueError(f"Column '{column_name}' not found")
+
+        value = scenario_row.iloc[0][column_name]
+        return value if pd.notna(value) else 0
+
+    def load_hydrogen_coefficient(self, hydrocoefficient_file: str = 'data/Data_V2.xlsx'):
+        """Load hydrogen coefficient data from Data_V2.xlsx for hydrogen usage analysis."""
+        self.hydrogen_file = hydrocoefficient_file
+
+        # Read the raw data to understand structure
+        raw_data = pd.read_excel(self.hydrogen_file, sheet_name='생산유발계수', header=None, engine='openpyxl')
+
+        # The data structure has sector codes in row 4 (index 4) starting from column 1
+        # and category names in row 5 (index 5) starting from column 2
+        # Data starts from row 6 (index 6)
+
+        # Extract sector information from row 6 onwards
+        data_rows = raw_data.iloc[6:].copy()
+
+        # Create proper column structure
+        # First column (index 0) has sector codes, second column (index 1) has sector names
+        # Columns 2-5 have the coefficient values for the 4 categories
+        sectors_data = []
+        for i, row in data_rows.iterrows():
+            if pd.notna(row.iloc[0]) and pd.notna(row.iloc[1]):  # Valid sector row
+                sector_info = {
+                    '부문': row.iloc[1],  # Sector name
+                    'production': pd.to_numeric(row.iloc[2], errors='coerce') if pd.notna(row.iloc[2]) else 0,
+                    'storage': pd.to_numeric(row.iloc[3], errors='coerce') if pd.notna(row.iloc[3]) else 0,
+                    'transportation': pd.to_numeric(row.iloc[4], errors='coerce') if pd.notna(row.iloc[4]) else 0,
+                    'utilization': pd.to_numeric(row.iloc[5], errors='coerce') if pd.notna(row.iloc[5]) else 0
+                }
+                sectors_data.append(sector_info)
+
+        # Create the hydrogen_data DataFrame
+        self.hydrogen_data = pd.DataFrame(sectors_data)
+        print(f"Loaded hydrogen data: {self.hydrogen_data.shape}")
+        print(f"Available sectors: {len(self.hydrogen_data)} sectors")
+
+        # Debug: show first few rows
+        if not self.hydrogen_data.empty:
+            print("Sample data:")
+            print(self.hydrogen_data.head())
+
+    def get_hydrogen_categories(self):
+        """Get available hydrogen categories (production, transportation, utilization, storage)."""
+        if not hasattr(self, 'hydrogen_data'):
+            self.load_hydrogen_coefficient()
+
+        # Return the specific column names for hydrogen categories
+        categories = ['production', 'transportation', 'utilization', 'storage']
+        available_categories = [cat for cat in categories if cat in self.hydrogen_data.columns]
+        return available_categories
+
+    def get_hydrogen_sectors(self):
+        """Get available sectors from hydrogen data (부문 column)."""
+        if not hasattr(self, 'hydrogen_data'):
+            self.load_hydrogen_coefficient()
+
+        if '부문' in self.hydrogen_data.columns:
+            return self.hydrogen_data['부문'].dropna().tolist()
+        return []
+
+    def get_hydrogen_coefficient(self, sector_name: str, category: str):
+        """Get hydrogen coefficient for specific sector and category."""
+        if not hasattr(self, 'hydrogen_data'):
+            self.load_hydrogen_coefficient()
+
+        # Find row with matching sector
+        sector_row = self.hydrogen_data[self.hydrogen_data['부문'] == sector_name]
+
+        if sector_row.empty:
+            raise ValueError(f"Sector '{sector_name}' not found in hydrogen data")
+
+        if category not in self.hydrogen_data.columns:
+            raise ValueError(f"Category '{category}' not found in hydrogen data")
+
+        value = sector_row.iloc[0][category]
+        return value if pd.notna(value) else 0
+
+    def calculate_hydrogen_effects(self, demand_change: float, quiet: bool = False) -> Dict[str, any]:
+        """
+        Calculate hydrogen effects for all sectors and categories.
+        Returns results for all combinations of sectors (rows) and categories (columns).
+        Each category gets a specific percentage of the total demand change.
+        """
+        if not hasattr(self, 'hydrogen_data'):
+            self.load_hydrogen_coefficient()
+
+        if not quiet:
+            print(f"\nAnalyzing Hydrogen Usage effects")
+            print(f"Total demand change: {demand_change:,.0f}")
+
+        # Use only the 4 specific categories with their percentage allocation
+        category_percentages = {
+            'production': 0.341,      # 34.1%
+            'transportation': 0.112,  # 11.2%
+            'utilization': 0.444,     # 44.4%
+            'storage': 0.104          # 10.4%
+        }
+
+        sectors = self.get_hydrogen_sectors()
+
+        if not quiet:
+            print("Category allocations:")
+            for cat, pct in category_percentages.items():
+                allocated_value = demand_change * pct
+                print(f"  {cat}: {pct*100:.1f}% = {allocated_value:,.0f}")
+
+        # Calculate effects for all sector-category combinations
+        results = []
+        for sector in sectors:
+            for category, percentage in category_percentages.items():
+                try:
+                    coefficient = self.get_hydrogen_coefficient(sector, category)
+                    if coefficient != 0 and pd.notna(coefficient):
+                        # Multiply coefficient by the allocated portion of demand change
+                        allocated_demand = demand_change * percentage
+                        impact = coefficient * allocated_demand
+                        results.append({
+                            'sector_code': sector,
+                            'sector_name': f"{sector} ({category})",
+                            'category': category,
+                            'coefficient': coefficient,
+                            'allocated_demand': allocated_demand,
+                            'impact': impact
+                        })
+                except Exception:
+                    continue  # Skip if coefficient not found
+
+        # Sort by absolute impact (descending)
+        results.sort(key=lambda x: abs(x['impact']), reverse=True)
+
+        # Calculate summary statistics
+        total_impact = sum([r['impact'] for r in results])
+
+        return {
+            'target_sector': 'Hydrogen Usage',
+            'target_product': 'All Hydrogen Sectors and Categories',
+            'demand_change': demand_change,
+            'category_percentages': category_percentages,
+            'coeff_type': 'hydrogen',
+            'coeff_name': 'Hydrogen Usage Coefficients',
+            'impacts': results,
+            'total_impact': total_impact,
+            'num_affected_sectors': len(results)
+        }
+
+    def get_hydrogen_impact_matrix(self, demand_change: float) -> pd.DataFrame:
+        """
+        Get hydrogen impact results in matrix format: rows=sectors, columns=categories, values=impact.
+        Returns DataFrame with sectors as index and hydrogen categories as columns.
+        """
+        if not hasattr(self, 'hydrogen_data'):
+            self.load_hydrogen_coefficient()
+
+        categories = ['production', 'storage', 'transportation', 'utilization']
+        category_percentages = {
+            'production': 0.341,
+            'storage': 0.104,
+            'transportation': 0.112,
+            'utilization': 0.444
+        }
+
+        sectors = self.get_hydrogen_sectors()
+
+        # Create impact matrix
+        impact_data = []
+        for sector in sectors:
+            # Skip the last sector (exclude last row)
+            if sector == sectors[-1]:
+                continue
+            row_data = {'Sector': sector}
+            row_total = 0
+            for category in categories:
+                try:
+                    coefficient = self.get_hydrogen_coefficient(sector, category)
+                    percentage = category_percentages[category]
+                    allocated_demand = demand_change * percentage
+                    impact_value = coefficient * allocated_demand
+                    row_data[f'{category.title()} (백만원)'] = impact_value
+                    row_total += impact_value
+                except:
+                    row_data[f'{category.title()} (백만원)'] = 0.0
+
+            # Add Total column
+            row_data['Total (백만원)'] = row_total
+            impact_data.append(row_data)
+
+        return pd.DataFrame(impact_data)
+
+    def export_hydrogen_results_to_excel(self, results: Dict, output_file: str = None):
+        """Export hydrogen analysis results to Excel file with matrix format as main output."""
+        if output_file is None:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            output_file = f"hydrogen_impact_matrix_{timestamp}.xlsx"
+
+        # Create output directory if it doesn't exist
+        output_dir = "output"
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir)
+
+        output_path = os.path.join(output_dir, output_file)
+
+        # Get impact matrix (main output format)
+        impact_matrix = self.get_hydrogen_impact_matrix(results['demand_change'])
+
+        with pd.ExcelWriter(output_path, engine='xlsxwriter') as writer:
+            # Main Impact Matrix sheet (rows=sectors, columns=categories, values=impact)
+            impact_matrix.to_excel(writer, sheet_name='Impact_Matrix', index=False)
+
+            # Summary sheet
+            summary_data = {
+                'Parameter': ['Demand Change', 'Total Sectors', 'Production Total', 'Storage Total', 'Transportation Total', 'Utilization Total', 'Overall Total'],
+                'Value': [
+                    results['demand_change'],
+                    len(impact_matrix),
+                    impact_matrix['Production (백만원)'].sum(),
+                    impact_matrix['Storage (백만원)'].sum(),
+                    impact_matrix['Transportation (백만원)'].sum(),
+                    impact_matrix['Utilization (백만원)'].sum(),
+                    impact_matrix['Total (백만원)'].sum()
+                ]
+            }
+            summary_df = pd.DataFrame(summary_data)
+            summary_df.to_excel(writer, sheet_name='Summary', index=False)
+
+            # Category allocation sheet
+            category_data = []
+            for category, percentage in results['category_percentages'].items():
+                allocated_demand = results['demand_change'] * percentage
+                category_data.append({
+                    'Category': category.title(),
+                    'Allocation %': f"{percentage*100:.1f}%",
+                    'Allocated Demand': allocated_demand
+                })
+
+            category_df = pd.DataFrame(category_data)
+            category_df.to_excel(writer, sheet_name='Category_Allocation', index=False)
+
+        print(f"Impact matrix exported to: {output_path}")
+        return output_path
+
+
     def load_data(self):
         """Load mapping and all three coefficient matrices from Excel file."""
         print("Loading I-O Table data...")
@@ -200,7 +490,7 @@ class IOTableAnalyzer:
         if coeff_type in ['jobcoeff', 'directemploycoeff']:
             return self._calculate_job_effects(final_target_sector, demand_change, coeff_type, coeff_names[coeff_type], quiet)
         
-        # Use final_target_sector for regular coefficients  
+        # Use final_target_sector for regular coefficients 
         selected_coeffs = self.coefficients[coeff_type]
         
         if final_target_sector not in selected_coeffs.columns:
@@ -289,9 +579,10 @@ class IOTableAnalyzer:
         if subsector_code not in selected_coeffs.columns:
             raise ValueError(f"Sub-sector column {subsector_code} not found in {coeff_type} coefficient matrix")
         
-        # Calculate job effects: coefficient * demand_change
-        # Note: Job coefficients represent jobs per unit of output, so result is in number of jobs
-        job_impacts = selected_coeffs[subsector_code] * demand_change
+        # Calculate job effects with proper unit conversion:
+        # - Job coefficients: 명/10억원 (jobs per 10 billion won)
+        # - Demand change: 백만원 (million won)
+        job_impacts = selected_coeffs[subsector_code] * 0.001 * demand_change / 1000
         
         # Remove zero or near-zero impacts and NaN values
         significant_impacts = job_impacts[(abs(job_impacts) > 1e-6) & pd.notna(job_impacts)]

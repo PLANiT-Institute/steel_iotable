@@ -12,9 +12,10 @@ def main():
         print("\nAvailable options:")
         print("1. List all sectors")
         print("2. Analyze direct effects")
-        print("3. Exit")
-        
-        choice = input("\nSelect option (1-3): ").strip()
+        print("3. Hydrogen production impact analysis (coefficients × demand)")
+        print("4. Exit")
+
+        choice = input("\nSelect option (1-4): ").strip()
         
         if choice == '1':
             print("\nAll available sectors:")
@@ -62,13 +63,67 @@ def main():
                 print(f"Error: {e}")
             except Exception as e:
                 print(f"Unexpected error: {e}")
-        
+
         elif choice == '3':
+            try:
+                print("\nHydrogen Production Impact Analysis")
+                print("This will multiply production coefficients by hydrogen demand scenarios.")
+
+                # Load hydrogen coefficient data
+                analyzer.load_hydrogen_coefficient()
+
+                # Get available sectors and categories
+                hydrogen_sectors = analyzer.get_hydrogen_sectors()
+                print(f"\nAvailable hydrogen sectors: {len(hydrogen_sectors)} sectors")
+
+                # Get demand change amount
+                demand_change = float(input("Enter hydrogen demand change amount: "))
+
+                # Get impact matrix (rows=sectors, columns=categories, values=impact)
+                impact_matrix = analyzer.get_hydrogen_impact_matrix(demand_change)
+
+                # Display matrix results
+                print(f"\n{'='*80}")
+                print(f"HYDROGEN IMPACT MATRIX - COEFFICIENTS × DEMAND")
+                print(f"{'='*80}")
+                print(f"Demand Change: {demand_change:,.0f}")
+                print(f"Matrix Format: Rows=Sectors, Columns=Hydrogen Categories (백만원), Values=Impact")
+                print(f"\n{impact_matrix.to_string(index=False, float_format='%.2f')}")
+                print(f"\nTotal Sectors: {len(impact_matrix)}")
+
+                # Calculate column totals
+                print(f"\nColumn Totals:")
+                for col in ['Production (백만원)', 'Storage (백만원)', 'Transportation (백만원)', 'Utilization (백만원)', 'Total (백만원)']:
+                    total = impact_matrix[col].sum()
+                    print(f"  {col}: {total:,.2f}")
+
+                # Ask if user wants to export to Excel
+                export_choice = input("\nExport impact matrix to Excel? (y/n): ").strip().lower()
+                if export_choice == 'y':
+                    # Create a results dict for export compatibility
+                    results_dict = {
+                        'demand_change': demand_change,
+                        'category_percentages': {
+                            'production': 0.341,
+                            'storage': 0.104,
+                            'transportation': 0.112,
+                            'utilization': 0.444
+                        }
+                    }
+                    analyzer.export_hydrogen_results_to_excel(results_dict)
+                    print("Impact matrix exported to Excel!")
+
+            except ValueError as e:
+                print(f"Error: {e}")
+            except Exception as e:
+                print(f"Unexpected error: {e}")
+
+        elif choice == '4':
             print("Goodbye!")
             break
-        
+
         else:
-            print("Invalid choice. Please select 1, 2, or 3.")
+            print("Invalid choice. Please select 1, 2, 3, or 4.")
 
 if __name__ == "__main__":
     main()
