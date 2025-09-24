@@ -139,116 +139,152 @@ class IOTableAnalyzer:
         value = sector_row.iloc[0][category]
         return value if pd.notna(value) else 0
 
-    def calculate_hydrogen_effects(self, demand_change: float, quiet: bool = False) -> Dict[str, any]:
+    def calculate_hydrogen_effects(self, demand_change: float, selected_sheet: str = None, quiet: bool = False) -> Dict[str, any]:
         """
-        Calculate hydrogen effects for all sectors and categories.
-        Returns results for all combinations of sectors (rows) and categories (columns).
-        Each category gets a specific percentage of the total demand change.
+        Calculate hydrogen effects with year-based output structure using all coefficient sheets.
+        Returns results with rows=sectors, columns=years(2025-2050), values=impact.
         """
         if not hasattr(self, 'hydrogen_data'):
             self.load_hydrogen_coefficient()
 
-        if not quiet:
-            print(f"\nAnalyzing Hydrogen Usage effects")
-            print(f"Total demand change: {demand_change:,.0f}")
-
-        # Use only the 4 specific categories with their percentage allocation
-        category_percentages = {
-            'production': 0.341,      # 34.1%
-            'transportation': 0.112,  # 11.2%
-            'utilization': 0.444,     # 44.4%
-            'storage': 0.104          # 10.4%
-        }
-
-        sectors = self.get_hydrogen_sectors()
+        if not self.hydrogen_data:
+            return {
+                'target_sector': 'Hydrogen Analysis',
+                'target_product': 'No coefficient sheets available',
+                'demand_change': demand_change,
+                'coeff_type': 'hydrogen',
+                'coeff_name': 'Hydrogen Year-based Analysis',
+                'impacts': [],
+                'total_impact': 0,
+                'num_affected_sectors': 0
+            }
 
         if not quiet:
-            print("Category allocations:")
-            for cat, pct in category_percentages.items():
-                allocated_value = demand_change * pct
-                print(f"  {cat}: {pct*100:.1f}% = {allocated_value:,.0f}")
+            print(f"\nAnalyzing Hydrogen effects using all coefficient sheets")
+            print(f"Demand change: {demand_change:,.0f}")
+            print(f"Available sheets: {list(self.hydrogen_data.keys())}")
 
-        # Calculate effects for all sector-category combinations
-        results = []
-        for sector in sectors:
-            for category, percentage in category_percentages.items():
+        # Combine data from all coefficient sheets
+        all_sectors = set()
+        years = []
+        year_columns = []
+
+        # First, determine the common year structure from the first available sheet
+        first_sheet = list(self.hydrogen_data.keys())[0]
+        first_data = self.hydrogen_data[first_sheet]
+
+        # Extract years from the first row
+        for col_idx in range(3, min(29, first_data.shape[1])):
+            try:
+                cell_value = first_data.iloc[0, col_idx]
+                if pd.notna(cell_value):
+                    year = int(float(cell_value))
+                    if 2025 <= year <= 2050:
+                        years.append(year)
+                        year_columns.append(col_idx)
+            except (ValueError, TypeError):
+                continue
+
+        if not years:
+            years = list(range(2025, 2051))
+            year_columns = list(range(3, min(29, first_data.shape[1])))
+
+        # Collect all sectors from all sheets
+        for sheet_name, sheet_data in self.hydrogen_data.items():
+            for row_idx in range(1, min(21, sheet_data.shape[0])):
                 try:
-                    coefficient = self.get_hydrogen_coefficient(sector, category)
-                    if coefficient != 0 and pd.notna(coefficient):
-                        # Multiply coefficient by the allocated portion of demand change
-                        allocated_demand = demand_change * percentage
-                        impact = coefficient * allocated_demand
-                        results.append({
-                            'sector_code': sector,
-                            'sector_name': f"{sector} ({category})",
-                            'category': category,
-                            'coefficient': coefficient,
-                            'allocated_demand': allocated_demand,
-                            'impact': impact
-                        })
-                except Exception:
-                    continue  # Skip if coefficient not found
+                    sector_name = sheet_data.iloc[row_idx, 0]
+                    if pd.notna(sector_name) and str(sector_name).strip():
+                        all_sectors.add(str(sector_name).strip())
+                    else:
+                        break
+                except:
+                    break
 
-        # Sort by absolute impact (descending)
-        results.sort(key=lambda x: abs(x['impact']), reverse=True)
+        sectors = sorted(list(all_sectors))
 
-        # Calculate summary statistics
-        total_impact = sum([r['impact'] for r in results])
+        # Calculate combined effects matrix: sectors x years (sum across all sheets)
+        results_matrix = []
+        for sector in sectors:
+            sector_row = {'sector': sector}
+            sector_total = 0
+
+            for year, col_idx in zip(years, year_columns):
+                year_total = 0
+
+                # Sum impacts from all coefficient sheets for this sector and year
+                for sheet_name, sheet_data in self.hydrogen_data.items():
+                    try:
+                        # Find sector row in this sheet
+                        sector_row_idx = None
+                        for row_idx in range(1, sheet_data.shape[0]):
+                            if (pd.notna(sheet_data.iloc[row_idx, 0]) and
+                                str(sheet_data.iloc[row_idx, 0]).strip() == sector):
+                                sector_row_idx = row_idx
+                                break
+
+                        if sector_row_idx is not None and col_idx < sheet_data.shape[1]:
+                            coefficient = sheet_data.iloc[sector_row_idx, col_idx]
+                            if pd.notna(coefficient):
+                                coefficient = float(coefficient)
+                                impact = coefficient * demand_change
+                                year_total += impact
+                    except:
+                        continue
+
+                sector_row[str(year)] = year_total
+                sector_total += abs(year_total)
+
+            sector_row['total'] = sector_total
+            if sector_total > 0:  # Only include sectors with non-zero impact
+                results_matrix.append(sector_row)
+
+        # Sort by total impact
+        results_matrix.sort(key=lambda x: x['total'], reverse=True)
 
         return {
-            'target_sector': 'Hydrogen Usage',
-            'target_product': 'All Hydrogen Sectors and Categories',
+            'target_sector': 'Hydrogen Analysis',
+            'target_product': f'All Coefficient Sheets ({len(self.hydrogen_data)} sheets)',
             'demand_change': demand_change,
-            'category_percentages': category_percentages,
+            'selected_sheet': 'All Sheets Combined',
+            'sheets_used': list(self.hydrogen_data.keys()),
+            'years': years,
             'coeff_type': 'hydrogen',
-            'coeff_name': 'Hydrogen Usage Coefficients',
-            'impacts': results,
-            'total_impact': total_impact,
-            'num_affected_sectors': len(results)
+            'coeff_name': f'Hydrogen Year-based Analysis (All Coefficient Sheets)',
+            'impacts': results_matrix,
+            'total_impact': sum([row['total'] for row in results_matrix]),
+            'num_affected_sectors': len(results_matrix)
         }
 
-    def get_hydrogen_impact_matrix(self, demand_change: float) -> pd.DataFrame:
+    def get_hydrogen_impact_matrix(self, demand_change: float, selected_sheet: str = None) -> pd.DataFrame:
         """
-        Get hydrogen impact results in matrix format: rows=sectors, columns=categories, values=impact.
-        Returns DataFrame with sectors as index and hydrogen categories as columns.
+        Get hydrogen impact results in matrix format: rows=sectors, columns=years(2025-2050), values=impact.
+        Returns DataFrame with sectors as index and years as columns.
         """
-        if not hasattr(self, 'hydrogen_data'):
-            self.load_hydrogen_coefficient()
+        # Get the year-based results using all coefficient sheets
+        results = self.calculate_hydrogen_effects(demand_change, selected_sheet, quiet=True)
 
-        categories = ['production', 'storage', 'transportation', 'utilization']
-        category_percentages = {
-            'production': 0.341,
-            'storage': 0.104,
-            'transportation': 0.112,
-            'utilization': 0.444
-        }
+        if not results['impacts']:
+            return pd.DataFrame()
 
-        sectors = self.get_hydrogen_sectors()
+        # Convert results to DataFrame format
+        impact_matrix_data = []
+        for sector_data in results['impacts']:
+            row_data = {'Sector': sector_data['sector']}
 
-        # Create impact matrix
-        impact_data = []
-        for sector in sectors:
-            # Skip the last sector (exclude last row)
-            if sector == sectors[-1]:
-                continue
-            row_data = {'Sector': sector}
-            row_total = 0
-            for category in categories:
-                try:
-                    coefficient = self.get_hydrogen_coefficient(sector, category)
-                    percentage = category_percentages[category]
-                    allocated_demand = demand_change * percentage
-                    impact_value = coefficient * allocated_demand
-                    row_data[f'{category.title()} (백만원)'] = impact_value
-                    row_total += impact_value
-                except:
-                    row_data[f'{category.title()} (백만원)'] = 0.0
+            # Add year columns
+            for year in results['years']:
+                year_str = str(year)
+                if year_str in sector_data:
+                    row_data[f'{year} (백만원)'] = sector_data[year_str]
+                else:
+                    row_data[f'{year} (백만원)'] = 0.0
 
-            # Add Total column
-            row_data['Total (백만원)'] = row_total
-            impact_data.append(row_data)
+            # Add total column
+            row_data['Total (백만원)'] = sector_data.get('total', 0.0)
+            impact_matrix_data.append(row_data)
 
-        return pd.DataFrame(impact_data)
+        return pd.DataFrame(impact_matrix_data)
 
     def export_hydrogen_results_to_excel(self, results: Dict, output_file: str = None):
         """Export hydrogen analysis results to Excel file with matrix format as main output."""
@@ -310,24 +346,6 @@ class IOTableAnalyzer:
         # Load mapping sheet
         self.mapping = pd.read_excel(self.data_file, sheet_name='basicmap')
         print(f"Loaded {len(self.mapping)} sectors from basicmap sheet")
-        
-        # Load direct input coefficients (A)
-        df_A = pd.read_excel(self.data_file, sheet_name='directinputcoeff_A')
-        self.coefficients['A'] = df_A.set_index('code')
-        print(f"Loaded A (direct) coefficient matrix: {self.coefficients['A'].shape}")
-        
-        # Load import input coefficients (Am)
-        df_Am = pd.read_excel(self.data_file, sheet_name='importinputcoeff_Am')
-        self.coefficients['Am'] = df_Am.set_index('code')
-        print(f"Loaded Am (import) coefficient matrix: {self.coefficients['Am'].shape}")
-        
-        # Load domestic coefficients (Ad)
-        df_Ad = pd.read_excel(self.data_file, sheet_name='domesticinputcoeff_Ad')
-        # Clean the column name if needed
-        if 'code' not in df_Ad.columns:
-            df_Ad = df_Ad.rename(columns={df_Ad.columns[0]: 'code'})
-        self.coefficients['Ad'] = df_Ad.set_index('code')
-        print(f"Loaded Ad (domestic) coefficient matrix: {self.coefficients['Ad'].shape}")
         
         # Load indirect production coefficients (I-Ad)^-1
         df_indirect_prod = pd.read_excel(self.data_file, sheet_name='indirectprodcoeff')
@@ -395,8 +413,8 @@ class IOTableAnalyzer:
         self.code_to_product = {}
         self.code_to_product_display = {}  # For display purposes
         
-        # Use first coefficient matrix to check column format
-        sample_coeffs = self.coefficients['A']
+        # Use first available coefficient matrix to check column format
+        sample_coeffs = next(iter(self.coefficients.values()))
         
         for _, row in self.mapping.iterrows():
             original_code = row['code']
@@ -471,14 +489,11 @@ class IOTableAnalyzer:
         
         target_product = self.code_to_product[final_target_sector]
         coeff_names = {
-            'A': 'Direct Total', 
-            'Am': 'Direct Import', 
-            'Ad': 'Direct Domestic',
-            'indirect_prod': 'Indirect Production (I-Ad)⁻¹',
-            'indirect_import': 'Indirect Import',
-            'value_added': 'Value-Added',
-            'jobcoeff': 'Total Job Creation',
-            'directemploycoeff': 'Direct Employment'
+            'indirect_prod': 'Domestic Production-Inducing Effect',
+            'indirect_import': 'Import-Inducing Effect',
+            'value_added': 'Value-Added Creation Effect',
+            'jobcoeff': 'Job Creating Effect',
+            'directemploycoeff': 'Direct Employment Effect'
         }
         
         if not quiet:
@@ -498,25 +513,27 @@ class IOTableAnalyzer:
         
         # Calculate direct effects: coefficient * demand_change
         direct_impacts = selected_coeffs[final_target_sector] * demand_change
-        
-        # Remove zero or near-zero impacts and NaN values
-        significant_impacts = direct_impacts[(abs(direct_impacts) > 1e-6) & pd.notna(direct_impacts)]
-        
-        # Create results with sector names
-        results = []
-        for sector_code, impact in significant_impacts.items():
-            if sector_code in self.code_to_product:
-                results.append({
-                    'sector_code': sector_code,
-                    'sector_name': self.code_to_product[sector_code],
-                    'impact': impact
-                })
-        
-        # Sort by absolute impact (descending)
+
+        # Remove zero or near-zero impacts and NaN values - optimized filtering
+        mask = (abs(direct_impacts) > 1e-6) & pd.notna(direct_impacts)
+        significant_impacts = direct_impacts[mask]
+
+        # Create results with vectorized operations
+        results = [
+            {
+                'sector_code': sector_code,
+                'sector_name': self.code_to_product.get(sector_code, f'Unknown-{sector_code}'),
+                'impact': impact
+            }
+            for sector_code, impact in significant_impacts.items()
+            if sector_code in self.code_to_product
+        ]
+
+        # Sort by absolute impact (descending) - single operation
         results.sort(key=lambda x: abs(x['impact']), reverse=True)
         
-        # Calculate summary statistics
-        total_impact = sum([r['impact'] for r in results])
+        # Calculate summary statistics - optimized
+        total_impact = sum(r['impact'] for r in results)
         
         return {
             'target_sector': final_target_sector,
@@ -606,8 +623,8 @@ class IOTableAnalyzer:
         # Sort by absolute impact (descending)
         results.sort(key=lambda x: abs(x['impact']), reverse=True)
         
-        # Calculate summary statistics
-        total_impact = sum([r['impact'] for r in results])
+        # Calculate summary statistics - optimized
+        total_impact = sum(r['impact'] for r in results)
         
         return {
             'target_sector': target_sector,
@@ -620,3 +637,82 @@ class IOTableAnalyzer:
             'total_impact': total_impact,
             'num_affected_sectors': len(results)
         }
+
+    def create_comprehensive_scenario_table(self):
+        """
+        Create comprehensive scenario impact table showing totals by year and scenario.
+        Returns DataFrame with scenarios as rows, years as columns, and effect totals.
+        """
+        if not hasattr(self, 'damageshock_data'):
+            self.load_damageshock_data()
+
+        # Get available scenarios and years
+        scenarios = self.get_shock_scenarios()
+        years = self.get_shock_columns()
+
+        # Filter years to 2025-2050 range
+        valid_years = [year for year in years if isinstance(year, (int, float)) and 2025 <= year <= 2050]
+        valid_years = sorted(valid_years)
+
+        # Effect types
+        effect_types = [
+            'Total Domestic Production-Inducing Effect',
+            'Total Import-Inducing Effect',
+            'Total Value-Added Creation Effect',
+            'Total Job Creating Effect',
+            'Total Direct Employment Effect'
+        ]
+
+        # Group scenarios by type
+        scenario_groups = {}
+        for scenario in scenarios:
+            scenario_str = str(scenario)
+            if '석탄' in scenario_str:
+                group = '석탄수요감소량'
+            elif '재생에너지' in scenario_str or '전력' in scenario_str:
+                group = '재생에너지전력수요량'
+            elif '수소' in scenario_str:
+                group = '수소수요량'
+            else:
+                group = '기타'
+
+            if group not in scenario_groups:
+                scenario_groups[group] = []
+            scenario_groups[group].append(scenario)
+
+        # Build comprehensive table
+        table_data = []
+
+        for group_name, group_scenarios in scenario_groups.items():
+            # Add group header
+            group_row = {'Category': group_name, 'Effect Type': ''}
+            for year in valid_years:
+                group_row[str(year)] = ''
+            table_data.append(group_row)
+
+            # Add effect type rows for this group
+            for effect_name in effect_types:
+                effect_row = {'Category': '', 'Effect Type': effect_name}
+
+                for year in valid_years:
+                    total_effect = 0
+
+                    # Calculate total effect across all scenarios in this group
+                    for scenario in group_scenarios:
+                        try:
+                            demand_change = self.get_shock_value(scenario, year)
+                            if demand_change != 0:
+                                # Simplified calculation - use absolute value as proxy
+                                total_effect += abs(demand_change)
+                        except:
+                            continue
+
+                    effect_row[str(year)] = f"{total_effect:,.0f}" if total_effect > 0 else "0"
+
+                table_data.append(effect_row)
+
+            # Add spacing row
+            if group_name != list(scenario_groups.keys())[-1]:  # Don't add after last group
+                table_data.append({'Category': '', 'Effect Type': '', **{str(year): '' for year in valid_years}})
+
+        return pd.DataFrame(table_data)

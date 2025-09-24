@@ -180,48 +180,66 @@ def main():
         
         # Check if this is hydrogen scenario
         if 'is_hydrogen_scenario' in locals() and is_hydrogen_scenario:
-            # Handle hydrogen analysis specially
-            with st.spinner("Calculating hydrogen effects..."):
+            # Handle hydrogen analysis specially using all coefficient sheets
+            with st.spinner("Calculating hydrogen effects using all coefficient sheets..."):
                 try:
                     hydrogen_results = analyzer.calculate_hydrogen_effects(demand_change, quiet=True)
 
                     # Display hydrogen results
-                    st.subheader("🔋 Hydrogen Usage Analysis")
+                    st.subheader("🔋 Hydrogen Year-based Analysis (All Coefficient Sheets)")
 
-                    col1, col2, col3 = st.columns(3)
+                    col1, col2, col3, col4 = st.columns(4)
                     with col1:
                         st.metric("Total Impact", f"{hydrogen_results['total_impact']:,.0f}")
                     with col2:
-                        st.metric("Sector-Category Combinations", hydrogen_results['num_affected_sectors'])
+                        st.metric("Affected Sectors", hydrogen_results['num_affected_sectors'])
                     with col3:
-                        st.metric("Demand Change Multiplier", f"{demand_change:,.0f}")
+                        st.metric("Demand Change", f"{demand_change:,.0f}")
+                    with col4:
+                        sheets_used = hydrogen_results.get('sheets_used', [])
+                        st.metric("Coefficient Sheets", f"{len(sheets_used)} sheets")
 
-                    # Results table - Matrix format: rows=sectors, columns=categories, values=impact
+                    # Display used sheets
+                    if sheets_used:
+                        st.info(f"Using coefficient sheets: {', '.join(sheets_used)}")
+
+                    # Results table - Matrix format: rows=sectors, columns=years, values=impact
                     if hydrogen_results['impacts']:
-                        # Get impact matrix (main output format)
+                        # Get impact matrix (main output format: sectors x years)
                         impact_matrix = analyzer.get_hydrogen_impact_matrix(demand_change)
 
-                        # Format for display
-                        display_df = impact_matrix.copy()
-                        for col in ['Production (백만원)', 'Storage (백만원)', 'Transportation (백만원)', 'Utilization (백만원)', 'Total (백만원)']:
-                            display_df[col] = display_df[col].apply(lambda x: f"{x:,.2f}")
+                        if not impact_matrix.empty:
+                            # Format for display
+                            display_df = impact_matrix.copy()
 
-                        # Display table
-                        st.dataframe(display_df, use_container_width=True, height=600)
+                            # Format numeric columns
+                            numeric_cols = [col for col in display_df.columns if '(백만원)' in col]
+                            for col in numeric_cols:
+                                display_df[col] = display_df[col].apply(lambda x: f"{x:,.2f}")
 
-                        # Show column totals
-                        st.subheader("Percentage allocated")
-                        col_totals = {}
-                        # 각 컬럼에 맞는 값을 직접 할당하려면 아래처럼 작성하면 됩니다.
-                        col_totals['Production (%)'] = 34.1
-                        col_totals['Storage (%)'] = 10.4
-                        col_totals['Transportation (%)'] = 11.2
-                        col_totals['Utilization (%)'] = 44.4
-                        col_totals['Total (%)'] = 100.0
+                            st.markdown("### 📊 Year-based Impact Matrix (Rows: Sectors, Columns: Years)")
+                            st.dataframe(display_df, use_container_width=True, height=600)
 
-                        totals_df = pd.DataFrame([col_totals])
-                        totals_df = totals_df.round(2)
-                        st.dataframe(totals_df, use_container_width=True)
+                            # Show year breakdown
+                            st.markdown("### 📈 Year-wise Summary")
+                            year_columns = [col for col in impact_matrix.columns if '(백만원)' in col and col != 'Total (백만원)']
+
+                            if year_columns:
+                                # Show first 5 years in metrics
+                                display_years = year_columns[:5]
+                                cols = st.columns(len(display_years))
+
+                                for i, col in enumerate(display_years):
+                                    year_name = col.replace(' (백만원)', '')
+                                    total = impact_matrix[col].sum()
+                                    with cols[i]:
+                                        st.metric(f"{year_name}", f"{total:,.0f}")
+
+                                if len(year_columns) > 5:
+                                    st.info(f"... and {len(year_columns) - 5} more years. See full matrix above.")
+
+                        else:
+                            st.warning("No impact matrix data available.")
 
                         # Download buttons
                         col1, col2 = st.columns(2)
@@ -270,16 +288,13 @@ def main():
 
         # Calculate all coefficient types including job coefficients for regular analysis
         all_results = {}
-        coefficient_types = ["A", "Am", "Ad", "indirect_prod", "indirect_import", "value_added", "jobcoeff", "directemploycoeff"]
+        coefficient_types = ["indirect_prod", "indirect_import", "value_added", "jobcoeff", "directemploycoeff"]
         coeff_names = {
-            "A": "Direct Total",
-            "Am": "Direct Import", 
-            "Ad": "Direct Domestic",
-            "indirect_prod": "Indirect Production",
-            "indirect_import": "Indirect Import",
-            "value_added": "Value-Added",
-            "jobcoeff": "Total Job Creation",
-            "directemploycoeff": "Direct Employment"
+            "indirect_prod": "Domestic Production-Inducing Effect",
+            "indirect_import": "Import-Inducing Effect",
+            "value_added": "Value-Added Creation Effect",
+            "jobcoeff": "Job Creating Effect",
+            "directemploycoeff": "Direct Employment Effect"
         }
         
         with st.spinner("Calculating all coefficient effects..."):
@@ -300,134 +315,119 @@ def main():
         st.subheader("📊 Analysis Summary")
 
         if scenario_info:
-            col1, col2, col3, col4, col5 = st.columns(5)
-        else:
             col1, col2, col3, col4 = st.columns(4)
+        else:
+            col1, col2, col3 = st.columns(3)
 
-        if all_results["A"]:
+        # Find first available result for product name
+        first_result = next((result for result in all_results.values() if result is not None), None)
+        if first_result:
             with col1:
                 st.metric("Target Sector", f"{selected_sector}")
             with col2:
-                st.metric("Product", all_results["A"]["target_product"])
+                st.metric("Product", first_result["target_product"])
             with col3:
-                st.metric("Demand Change", f"{demand_change:,.0f}")
-            with col4:
-                st.metric("Analysis Types", len([r for r in all_results.values() if r is not None]))
-
+                st.metric("Demand Change (백만원)", f"{demand_change/1000:,.0f}")
             if scenario_info:
-                with col5:
+                with col4:
                     st.metric("Demand Change Scenario", scenario_info)
         
-        # Create tabs: Summary first, then each coefficient type
-        tab_names = ["📊 Summary"] + [f"{coeff_names[ct]} ({ct})" for ct in coefficient_types]
-        tabs = st.tabs(tab_names)
-        
-        # Summary tab (first tab)
-        with tabs[0]:
-            st.subheader("📊 Complete Analysis Summary")
+            st.subheader("📊 Economic and Employment Impact")
             
-            # Overall comparison table - separate economic and job effects
-            economic_summary = []
-            job_summary = []
-            
-            # Separate data by effect type
-            economic_coeffs = ["A", "Am", "Ad", "indirect_prod", "indirect_import", "value_added"]
-            job_coeffs = ["jobcoeff", "directemploycoeff"]
-            
-            for coeff_type in economic_coeffs:
-                if all_results[coeff_type]:
-                    results = all_results[coeff_type]
-                    economic_summary.append({
-                        'Coefficient Type': f"{coeff_names[coeff_type]} ({coeff_type})",
-                        'Total Impact': f"{results['total_impact']:,.0f}",
-                        'Number of Affected Sectors': results['num_affected_sectors'],
-                        'Top Impact Sector': results['impacts'][0]['sector_name'] if results['impacts'] else 'None',
-                        'Top Impact Value': f"{results['impacts'][0]['impact']:,.0f}" if results['impacts'] else '0'
-                    })
-            
-            for coeff_type in job_coeffs:
-                if all_results[coeff_type]:
-                    results = all_results[coeff_type]
-                    job_summary.append({
-                        'Coefficient Type': f"{coeff_names[coeff_type]} ({coeff_type})",
-                        'Total Jobs': f"{results['total_impact']:,.0f}",
-                        'Affected Sub-sectors': results['num_affected_sectors'],
-                        'Top Impact Sub-sector': results['impacts'][0]['sector_name'] if results['impacts'] else 'None',
-                        'Top Impact Value': f"{results['impacts'][0]['impact']:,.0f}" if results['impacts'] else '0'
-                    })
-            
-            # Display tables
-            if economic_summary and job_summary:
-                col1, col2 = st.columns(2)
-                
-                with col1:
-                    st.markdown("**💰 Economic Effects Summary**")
-                    economic_df = pd.DataFrame(economic_summary)
-                    st.dataframe(economic_df, use_container_width=True)
-                
-                with col2:
-                    st.markdown("**👥 Employment Effects Summary**")
-                    job_df = pd.DataFrame(job_summary)
-                    st.dataframe(job_df, use_container_width=True)
-            
-            elif economic_summary:
-                st.markdown("**💰 Economic Effects Summary**")
-                economic_df = pd.DataFrame(economic_summary)
-                st.dataframe(economic_df, use_container_width=True)
-                
-            elif job_summary:
-                st.markdown("**👥 Employment Effects Summary**")
-                job_df = pd.DataFrame(job_summary)
-                st.dataframe(job_df, use_container_width=True)
-            
-            # Combined summary for download (maintain backward compatibility)
-            all_summary_data = economic_summary + job_summary
+            # Create consolidated impact matrix with all coefficient results
+            sector_impacts = {}
+
+            # Collect all unique sectors first
+            all_sectors = set()
+            for coeff_type in coefficient_types:
+                if all_results[coeff_type] and all_results[coeff_type]['impacts']:
+                    for impact in all_results[coeff_type]['impacts']:
+                        sector_code = str(impact['sector_code']).replace(',', '')  # Remove commas from sector codes
+                        all_sectors.add((sector_code, impact['sector_name']))
+
+            # Sort sectors by code for consistent ordering
+            sorted_sectors = sorted(list(all_sectors), key=lambda x: x[0])
+
+            # Build the consolidated matrix
+            matrix_data = []
+            for idx, (sector_code, sector_name) in enumerate(sorted_sectors, 1):
+                row = {
+                    '코드번호': sector_code,
+                    '섹터명': sector_name
+                }
+
+                # Add impact values for each coefficient type
+                for coeff_type in coefficient_types:
+                    if all_results[coeff_type]:
+                        # Find matching sector impact
+                        sector_impact = 0
+                        for impact in all_results[coeff_type]['impacts']:
+                            impact_code = str(impact['sector_code']).replace(',', '')
+                            if impact_code == sector_code:
+                                sector_impact = impact['impact']
+                                break
+
+                        # Add unit suffix based on coefficient type
+                        if coeff_type in ["jobcoeff", "directemploycoeff"]:
+                            unit = "명"
+                        else:
+                            unit = "백만원"
+
+                        col_name = f"{coeff_names[coeff_type]} ({unit})"
+                        row[col_name] = f"{sector_impact:,.2f}"
+
+                matrix_data.append(row)
+
+            # Display the consolidated matrix with row and column sums
+            if matrix_data:
+                consolidated_df = pd.DataFrame(matrix_data)
+
+                # Add column totals (sum for each coefficient type)
+                numeric_columns = [col for col in consolidated_df.columns if col not in ['코드번호', '섹터명']]
+
+                # Calculate column sums
+                column_sums = {'코드번호': 'Total', '섹터명': '열합계'}
+                for col in numeric_columns:
+                    # Convert formatted strings back to numbers for sum calculation
+                    numeric_values = consolidated_df[col].str.replace(',', '').astype(float)
+                    column_sums[col] = f"{numeric_values.sum():,.2f}"
+
+                # 경제효과 계산
+                econ_columns = ['Domestic Production-Inducing Effect (백만원)', 'Import-Inducing Effect (백만원)', 'Value-Added Creation Effect (백만원)']
+                row_totals = []
+                for _, row in consolidated_df.iterrows():
+                    total = 0
+                    for col in econ_columns:
+                        value = float(row[col].replace(',', ''))
+                        total += abs(value)  # Use absolute values for row totals
+                    row_totals.append(f"{total:,.2f}")
+                consolidated_df['경제효과(백만원)'] = row_totals
+
+                # Add column sums as the last row
+                column_sums['경제효과(백만원)'] = f"{sum(float(val.replace(',', '')) for val in row_totals):,.2f}"
+                consolidated_df = pd.concat([consolidated_df, pd.DataFrame([column_sums])], ignore_index=True)
+
+                st.dataframe(consolidated_df, use_container_width=True, height=600)
+
+            # Prepare data for download
+            all_summary_data = matrix_data
             if all_summary_data:
                 summary_df = pd.DataFrame(all_summary_data)
                 
                 # Combined results for download
-                st.subheader("📥 Download Complete Analysis")
+                st.subheader("📥 Download Economic and Employment Impact")
                 
                 # Create Excel file with multiple sheets
                 try:
                     from io import BytesIO
-                    
-                    # Create Excel writer object
+
                     buffer = BytesIO()
                     with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-                        
-                        # Summary sheet
-                        summary_df.to_excel(writer, sheet_name='Summary', index=False)
-                        
-                        # Individual coefficient sheets
-                        for coeff_type in coefficient_types:
-                            if all_results[coeff_type] and all_results[coeff_type]['impacts']:
-                                results = all_results[coeff_type]
-                                df = pd.DataFrame(results['impacts'])
-                                df = df[['sector_code', 'sector_name', 'impact']]
-                                df.columns = ['Sector Code', 'Sector Name', 'Impact']
-                                df = df.sort_values('Impact', key=lambda x: abs(x), ascending=False)
-                                
-                                # Add metadata as first rows
-                                metadata = pd.DataFrame([
-                                    ['Analysis Details', '', ''],
-                                    ['Target Sector', results['target_sector'], ''],
-                                    ['Target Product', results['target_product'], ''],
-                                    ['Demand Change', results['demand_change'], ''],
-                                    ['Coefficient Type', f"{results['coeff_name']} ({coeff_type})", ''],
-                                    ['Total Impact', results['total_impact'], ''],
-                                    ['', '', ''],
-                                    ['Sector Code', 'Sector Name', 'Impact']
-                                ], columns=['Sector Code', 'Sector Name', 'Impact'])
-                                
-                                final_df = pd.concat([metadata, df], ignore_index=True)
-                                sheet_name = coeff_names[coeff_type][:30]  # Excel sheet name limit
-                                final_df.to_excel(writer, sheet_name=sheet_name, index=False, header=False)
-                    
+                        summary_df.to_excel(writer, sheet_name='종합', index=False)
                     buffer.seek(0)
                     
                     st.download_button(
-                        label="📊 Download Complete Analysis (Excel)",
+                        label="📊 Download Economic and Employment Impact (Excel)",
                         data=buffer,
                         file_name=f"complete_io_analysis_{selected_sector}_{demand_change}.xlsx",
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -454,167 +454,63 @@ def main():
                         combined_df = pd.DataFrame(combined_data)
                         csv_data = combined_df.to_csv(index=False)
                         st.download_button(
-                            label="📊 Download Complete Analysis (CSV)",
+                            label="📊 Download Economic and Employment Impact (CSV)",
                             data=csv_data,
                             file_name=f"complete_io_analysis_{selected_sector}_{demand_change}.csv",
                             mime="text/csv"
                         )
                 
+                # Comprehensive Scenario Impact Table
+                st.subheader("📊 Comprehensive Scenario Impact Table")
+
+                try:
+                    comprehensive_table = analyzer.create_comprehensive_scenario_table()
+                    if not comprehensive_table.empty:
+                        st.markdown("**Year-wise Total Effects by Scenario Type**")
+
+                        # Display the comprehensive table
+                        st.dataframe(comprehensive_table, use_container_width=True, height=600)
+
+                        # Download option for comprehensive table
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            # CSV download
+                            import io
+                            csv_buffer = io.StringIO()
+                            comprehensive_table.to_csv(csv_buffer, index=False, encoding='utf-8-sig')
+                            st.download_button(
+                                label="📥 Download Comprehensive Table (CSV)",
+                                data=csv_buffer.getvalue(),
+                                file_name="comprehensive_scenario_impact_table.csv",
+                                mime="text/csv"
+                            )
+
+                        with col2:
+                            # Excel download
+                            from io import BytesIO
+                            excel_buffer = BytesIO()
+                            with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
+                                comprehensive_table.to_excel(writer, sheet_name='Comprehensive_Impact', index=False)
+                            excel_buffer.seek(0)
+
+                            st.download_button(
+                                label="📊 Download Comprehensive Table (Excel)",
+                                data=excel_buffer,
+                                file_name="comprehensive_scenario_impact_table.xlsx",
+                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                            )
+                    else:
+                        st.warning("No comprehensive scenario data available.")
+
+                except Exception as e:
+                    st.warning(f"Could not generate comprehensive scenario table: {str(e)}")
+
                 # Detailed comparison charts - separate economic and job effects
-                st.subheader("📈 Impact Comparison")
-                
-                # Separate coefficient types by category
-                economic_coeffs = ["A", "Am", "Ad", "indirect_prod", "indirect_import", "value_added"]
-                job_coeffs = ["jobcoeff", "directemploycoeff"]
-                
-                # Create economic effects chart data
-                economic_chart_data = []
-                for coeff_type in economic_coeffs:
-                    if all_results[coeff_type]:
-                        economic_chart_data.append({
-                            'Coefficient Type': coeff_names[coeff_type],
-                            'Total Impact': all_results[coeff_type]['total_impact'],
-                            'Affected Sectors': all_results[coeff_type]['num_affected_sectors']
-                        })
-                
-                # Create job effects chart data
-                job_chart_data = []
-                for coeff_type in job_coeffs:
-                    if all_results[coeff_type]:
-                        job_chart_data.append({
-                            'Coefficient Type': coeff_names[coeff_type],
-                            'Total Jobs': all_results[coeff_type]['total_impact'],
-                            'Affected Sub-sectors': all_results[coeff_type]['num_affected_sectors']
-                        })
-                
-                # Display charts
-                if economic_chart_data and job_chart_data:
-                    # Two separate sections for economic vs job effects
-                    col1, col2 = st.columns(2)
-                    
-                    with col1:
-                        st.markdown("**💰 Economic Effects**")
-                        economic_df = pd.DataFrame(economic_chart_data)
-                        st.caption("Total Economic Impact by Type")
-                        st.bar_chart(economic_df.set_index('Coefficient Type')['Total Impact'])
-                        
-                        st.caption("Economic Sectors Affected")
-                        st.bar_chart(economic_df.set_index('Coefficient Type')['Affected Sectors'])
-                        
-                    
-                    with col2:
-                        st.markdown("**👥 Employment Effects**")
-                        job_df = pd.DataFrame(job_chart_data)
-                        st.caption("Total Jobs Created/Affected")
-                        st.bar_chart(job_df.set_index('Coefficient Type')['Total Jobs'])
-                        
-                        st.caption("Employment Sub-sectors Affected")
-                        st.bar_chart(job_df.set_index('Coefficient Type')['Affected Sub-sectors'])
-                        
-                
-                elif economic_chart_data:
-                    # Only economic data available
-                    economic_df = pd.DataFrame(economic_chart_data)
-                    col1, col2 = st.columns(2)
-                    with col1:
-                        st.bar_chart(economic_df.set_index('Coefficient Type')['Total Impact'])
-                        st.caption("Total Economic Impact by Type")
-                    with col2:
-                        st.bar_chart(economic_df.set_index('Coefficient Type')['Affected Sectors'])
-                        st.caption("Economic Sectors Affected")
-                        
-                elif job_chart_data:
-                    # Only job data available  
-                    job_df = pd.DataFrame(job_chart_data)
-                    col1, col2 = st.columns(2)
-                    with col1:
-                        st.bar_chart(job_df.set_index('Coefficient Type')['Total Jobs'])
-                        st.caption("Total Jobs Created/Affected")
-                    with col2:
-                        st.bar_chart(job_df.set_index('Coefficient Type')['Affected Sub-sectors'])
-                        st.caption("Employment Sub-sectors Affected")
+                st.subheader("📈 Visualization")
             else:
                 st.warning("No results available for summary.")
         
-        # Individual coefficient type tabs (starting from index 1)
-        for i, coeff_type in enumerate(coefficient_types):
-            with tabs[i + 1]:  # +1 because summary tab is at index 0
-                results = all_results[coeff_type]
-                
-                if results is None:
-                    st.error(f"Failed to calculate {coeff_names[coeff_type]} effects")
-                    continue
-                
-                # Summary metrics for this coefficient type
-                col1, col2, col3 = st.columns(3)
-                with col1:
-                    st.metric("Total Impact", f"{results['total_impact']:,.0f}")
-                with col2:
-                    st.metric("Affected Sectors", results['num_affected_sectors'])
-                with col3:
-                    if results['impacts']:
-                        max_impact = max([abs(imp['impact']) for imp in results['impacts']])
-                        st.metric("Max Impact", f"{max_impact:,.0f}")
-                
-                # Results table
-                if results['impacts']:
-                    df = pd.DataFrame(results['impacts'])
-                    df['abs_impact'] = df['impact'].abs()
-                    df = df.sort_values('abs_impact', ascending=False)
-                    
-                    # Display controls
-                    show_top = st.selectbox(f"Show top", [20, 50, 100, "All"], index=0, key=f"top_{coeff_type}")
-                    
-                    # Format the DataFrame for display
-                    display_df = df[['sector_code', 'sector_name', 'impact']].copy()
-                    display_df.columns = ['Code', 'Sector Name', 'Impact']
-                    display_df['Impact'] = display_df['Impact'].apply(lambda x: f"{x:,.2f}")
-                    display_df.index = range(1, len(display_df) + 1)
-                    
-                    # Filter data based on selection
-                    if show_top != "All":
-                        filtered_df = display_df.head(show_top)
-                    else:
-                        filtered_df = display_df
-                    
-                    # Display table
-                    st.dataframe(
-                        filtered_df,
-                        width=800,
-                        height=400
-                    )
-                    
-                    # Download button
-                    csv_data = df[['sector_code', 'sector_name', 'impact']].to_csv(index=False)
-                    st.download_button(
-                        label=f"📥 Download {coeff_names[coeff_type]} Results",
-                        data=csv_data,
-                        file_name=f"io_analysis_{selected_sector}_{coeff_type}.csv",
-                        mime="text/csv",
-                        key=f"download_{coeff_type}"
-                    )
-                    
-                    # Quick statistics
-                    st.markdown("### 📈 Statistics")
-                    col3, col4, col5, col6 = st.columns(4)
-                    
-                    impacts_series = df['impact']
-                    with col3:
-                        st.metric("Max", f"{impacts_series.max():,.0f}")
-                    with col4:
-                        st.metric("Min", f"{impacts_series.min():,.0f}")
-                    with col5:
-                        st.metric("Mean", f"{impacts_series.mean():,.0f}")
-                    with col6:
-                        std_val = impacts_series.std()
-                        if pd.notna(std_val):
-                            st.metric("Std Dev", f"{std_val:,.0f}")
-                        else:
-                            st.metric("Std Dev", "N/A")
-                        
-                else:
-                    st.warning(f"No significant impacts found for {coeff_names[coeff_type]} analysis.")
-    
+
     else:
         st.info("👈 Select a sector, enter demand change, and click 'Analyze All Effects' to see results in tabs below")
     
