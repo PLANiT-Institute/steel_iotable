@@ -107,7 +107,7 @@ class EnhancedSectorAnalyzer:
         print(f"  - Domestic coefficients (Ad): {'✓' if import_info['domestic_coefficients_loaded'] else '✗'}")
         print(f"  - Import Leontief inverse: {'✓' if import_info['import_leontief_calculated'] else '✗'}")
         print(f"  - Domestic Leontief inverse: {'✓' if import_info['domestic_leontief_calculated'] else '✗'}")
-        
+     
         # Comprehensive analysis status
         comp_info = self.comprehensive_analyzer.get_data_info()
         print(f"\nComprehensive Analysis:")
