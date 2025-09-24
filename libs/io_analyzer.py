@@ -600,7 +600,7 @@ class IOTableAnalyzer:
         # - Job coefficients: 명/10억원 (jobs per 10 billion won)
         # - Demand change: 백만원 (million won)
         job_impacts = selected_coeffs[subsector_code] * 0.001 * demand_change / 1000
-        
+   
         # Remove zero or near-zero impacts and NaN values
         significant_impacts = job_impacts[(abs(job_impacts) > 1e-6) & pd.notna(job_impacts)]
         
