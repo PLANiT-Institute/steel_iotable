@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 from libs.io_analyzer import IOTableAnalyzer
 from hydrogen_gui import show_hydrogen_analysis
+from scenario_analyzer import ScenarioAnalyzer
 
 # Configure Streamlit page
 st.set_page_config(
@@ -20,14 +21,16 @@ def main():
     st.sidebar.title("Analysis Selection")
     analysis_type = st.sidebar.radio(
         "Choose Analysis Type:",
-        ["I-O Table Analysis", "Hydrogen Table Analysis"],
+        ["I-O Table Analysis", "Hydrogen Table Analysis", "Scenario Batch Analysis"],
         index=0
     )
 
     if analysis_type == "I-O Table Analysis":
         show_io_analysis()
-    else:
+    elif analysis_type == "Hydrogen Table Analysis":
         show_hydrogen_analysis()
+    else:  # Scenario Batch Analysis
+        show_scenario_analysis()
 
 def show_io_analysis():
     st.title("🏭 Steel-Coal I-O Table Direct Effects Analyzer")
@@ -364,7 +367,7 @@ def show_io_analysis():
                     # Display table
                     st.dataframe(
                         display_df,
-                        use_container_width=True,
+                        width='stretch',
                         height=600
                     )
                     
@@ -409,6 +412,456 @@ def show_io_analysis():
     <p>Steel-Coal I-O Table Analyzer | Built with Streamlit | Data: Korean I-O Table 2020</p>
     </div>
     """, unsafe_allow_html=True)
+
+@st.cache_data
+def load_scenario_analyzer():
+    """Load the scenario analyzer with caching."""
+    return ScenarioAnalyzer()
+
+def show_scenario_analysis():
+    st.title("📊 Scenario Batch Analysis")
+    st.markdown("---")
+    st.markdown("""
+    This tool analyzes multiple scenarios from the scenarios.xlsx file, processing all input sectors
+    across all years for all available effect types automatically.
+    """)
+
+    # Load scenario analyzer
+    with st.spinner("Loading scenario data..."):
+        try:
+            scenario_analyzer = load_scenario_analyzer()
+            st.success(f"✅ Loaded {len(scenario_analyzer.scenarios_data)} scenarios")
+
+            # Display scenario overview
+            st.subheader("📋 Scenario Overview")
+            preview_df = scenario_analyzer.scenarios_data.copy()
+
+            # Fix data types for Arrow compatibility
+            preview_df['input'] = preview_df['input'].astype(str)
+            preview_df['sector'] = preview_df['sector'].astype(str)
+
+            # Convert all column names to strings for consistency
+            preview_df.columns = [str(col) for col in preview_df.columns]
+
+            st.dataframe(preview_df, width='stretch')
+
+            # Years covered
+            year_columns = [col for col in scenario_analyzer.scenarios_data.columns if isinstance(col, int)]
+            st.info(f"**Years covered:** {min(year_columns)} - {max(year_columns)} ({len(year_columns)} years)")
+
+        except Exception as e:
+            st.error(f"❌ Error loading scenarios: {str(e)}")
+            st.info("Make sure the scenarios.xlsx file is in the data/ directory")
+            return
+
+    # Analysis button - runs all effect types automatically
+    if st.sidebar.button("🚀 Run Complete Scenario Analysis", type="primary"):
+        # Initialize session state for results
+        if 'scenario_results' not in st.session_state:
+            st.session_state.scenario_results = None
+            st.session_state.scenario_analyzer = None
+
+        # Define all effect types to analyze
+        all_effect_types = [
+            'inputcoeff_A',        # Input coefficients (hydrogen)
+            'valueaddedcoeff',     # Value added (hydrogen)
+            'A',                   # Direct total (IO)
+            'Am',                  # Direct import (IO)
+            'Ad',                  # Direct domestic (IO)
+            'indirect_prod',       # Indirect production (IO)
+            'indirect_import',     # Indirect import (IO)
+            'value_added',         # Value added (IO)
+            'jobcoeff',           # Job creation
+            'directemploycoeff'    # Direct employment
+        ]
+
+        with st.spinner("Running complete scenario analysis... This may take a few minutes."):
+            try:
+                # Run the analysis for all effect types
+                scenario_analyzer.run_all_scenarios(effect_types=all_effect_types)
+
+                # Store results in session state
+                st.session_state.scenario_results = scenario_analyzer.aggregated_results
+                st.session_state.scenario_analyzer = scenario_analyzer
+
+                st.success("✅ Complete scenario analysis finished!")
+
+            except Exception as e:
+                st.error(f"❌ Error during analysis: {str(e)}")
+                return
+
+    # Display results if available
+    if st.session_state.get('scenario_results') and st.session_state.get('scenario_analyzer'):
+        scenario_analyzer = st.session_state.scenario_analyzer
+        results = st.session_state.scenario_results
+
+        st.subheader("📈 Analysis Results")
+
+        # Separate results by table type and input source
+        io_effects = ['A', 'Am', 'Ad', 'indirect_prod', 'indirect_import', 'value_added']
+        hydrogen_effects = ['inputcoeff_A', 'valueaddedcoeff']
+        io_job_effects = ['jobcoeff', 'directemploycoeff']  # Job effects for IO scenarios
+        hydrogen_job_effects = ['jobcoeff', 'directemploycoeff']  # Job effects for Hydrogen scenarios
+
+        # Top level tabs: IO Table vs Hydrogen Table
+        main_tabs = st.tabs(["🏭 IO Table Results", "⚡ Hydrogen Table Results"])
+
+        # IO Table Results
+        with main_tabs[0]:
+            st.markdown("### Input-Output Table Analysis Results")
+
+            # Get available IO effects (only from IO table scenarios)
+            available_io_effects = [effect for effect in io_effects if effect in results and results[effect]]
+            available_io_job_effects = [effect for effect in io_job_effects if effect in results and results[effect]]
+
+            if available_io_effects or available_io_job_effects:
+                # Effect type descriptions for IO
+                io_effect_descriptions = {
+                    'A': 'Direct Total Effects',
+                    'Am': 'Direct Import Effects',
+                    'Ad': 'Direct Domestic Effects',
+                    'indirect_prod': 'Indirect Production Effects',
+                    'indirect_import': 'Indirect Import Effects',
+                    'value_added': 'Value Added Effects',
+                    'jobcoeff': 'Job Creation Effects (IO)',
+                    'directemploycoeff': 'Direct Employment Effects (IO)'
+                }
+
+                # Create tabs for IO effect types
+                io_tab_names = []
+                io_tab_effects = []
+
+                for effect in available_io_effects:
+                    io_tab_names.append(io_effect_descriptions[effect])
+                    io_tab_effects.append(effect)
+
+                for effect in available_io_job_effects:
+                    io_tab_names.append(io_effect_descriptions[effect])
+                    io_tab_effects.append(effect)
+
+                io_effect_tabs = st.tabs(io_tab_names)
+
+                for i, effect_type in enumerate(io_tab_effects):
+                    with io_effect_tabs[i]:
+                        _display_effect_results(effect_type, results, scenario_analyzer, io_effect_descriptions, table_type="io")
+            else:
+                st.warning("No IO table results available")
+
+        # Hydrogen Table Results
+        with main_tabs[1]:
+            st.markdown("### Hydrogen Table Analysis Results")
+
+            # Get available hydrogen effects (only from hydrogen table scenarios)
+            available_hydrogen_effects = [effect for effect in hydrogen_effects if effect in results and results[effect]]
+            available_hydrogen_job_effects = [effect for effect in hydrogen_job_effects if effect in results and results[effect]]
+
+            if available_hydrogen_effects or available_hydrogen_job_effects:
+                # Effect type descriptions for Hydrogen
+                hydrogen_effect_descriptions = {
+                    'inputcoeff_A': 'Input Coefficients',
+                    'valueaddedcoeff': 'Value Added Effects',
+                    'jobcoeff': 'Job Creation Effects (Hydrogen)',
+                    'directemploycoeff': 'Direct Employment Effects (Hydrogen)'
+                }
+
+                # Create tabs for Hydrogen effect types
+                hydrogen_tab_names = []
+                hydrogen_tab_effects = []
+
+                for effect in available_hydrogen_effects:
+                    hydrogen_tab_names.append(hydrogen_effect_descriptions[effect])
+                    hydrogen_tab_effects.append(effect)
+
+                for effect in available_hydrogen_job_effects:
+                    hydrogen_tab_names.append(hydrogen_effect_descriptions[effect])
+                    hydrogen_tab_effects.append(effect)
+
+                hydrogen_effect_tabs = st.tabs(hydrogen_tab_names)
+
+                for i, effect_type in enumerate(hydrogen_tab_effects):
+                    with hydrogen_effect_tabs[i]:
+                        _display_effect_results(effect_type, results, scenario_analyzer, hydrogen_effect_descriptions, table_type="hydrogen")
+            else:
+                st.warning("No hydrogen table results available")
+
+            # Add a download section for all results
+            st.markdown("---")
+            st.subheader("💾 Download All Results")
+
+            col1, col2 = st.columns(2)
+
+            with col1:
+                # Generate Excel files button
+                if st.button("📊 Generate Excel Reports"):
+                    with st.spinner("Generating Excel reports..."):
+                        try:
+                            scenario_analyzer.create_summary_tables(output_dir='output')
+                            st.success("✅ Excel reports generated in 'output/' directory!")
+
+                            # List generated files
+                            import os
+                            if os.path.exists('output'):
+                                files = [f for f in os.listdir('output') if f.endswith('.xlsx')]
+                                if files:
+                                    st.info(f"Generated files: {', '.join(files)}")
+
+                        except Exception as e:
+                            st.error(f"❌ Error generating reports: {str(e)}")
+
+            with col2:
+                # CSV download for all results
+                if st.button("📥 Download Complete CSV"):
+                    # Prepare combined data for CSV
+                    combined_data = []
+                    for effect_type in available_effects:
+                        if not results[effect_type]:
+                            continue
+
+                        for year, year_data in results[effect_type].items():
+                            for sector in year_data['sector_impacts']:
+                                combined_data.append({
+                                    'effect_type': effect_type,
+                                    'effect_description': effect_type_descriptions.get(effect_type, effect_type),
+                                    'year': year,
+                                    'sector_code': sector['sector_code'],
+                                    'sector_name': sector['sector_name'],
+                                    'total_impact': sector['total_impact'],
+                                    'avg_impact': sector['avg_impact'],
+                                    'scenario_count': sector['scenario_count']
+                                })
+
+                    if combined_data:
+                        combined_df = pd.DataFrame(combined_data)
+                        csv_data = combined_df.to_csv(index=False)
+
+                        st.download_button(
+                            label="📊 Download Complete Analysis (CSV)",
+                            data=csv_data,
+                            file_name="complete_scenario_analysis.csv",
+                            mime="text/csv",
+                            key="download_complete"
+                        )
+                else:
+                    st.warning("No results available. Please run the analysis first.")
+
+    else:
+        st.info("👈 Click 'Run Complete Scenario Analysis' to analyze all scenarios and effect types.")
+
+def _display_effect_results(effect_type, results, scenario_analyzer, effect_descriptions, table_type="io"):
+    """Helper function to display results for a specific effect type with input sector separation."""
+    effect_data = results[effect_type]
+
+    if not effect_data:
+        st.warning(f"No results available for {effect_type}")
+        return
+
+    st.markdown(f"### {effect_descriptions.get(effect_type, effect_type)}")
+
+    # Get individual scenario results to separate by input sector
+    individual_results = scenario_analyzer.results.get(effect_type, {})
+
+    if not individual_results:
+        st.warning("No individual scenario data available")
+        return
+
+    # Collect unique input sectors from the scenarios data, filtered by table type
+    input_sectors = {}
+    for idx, row in scenario_analyzer.scenarios_data.iterrows():
+        input_table = row['input']
+        sector = str(row['sector'])
+
+        # Filter by table type
+        is_hydrogen_table = 'hydrogen' in input_table.lower()
+        if (table_type == "hydrogen" and not is_hydrogen_table) or (table_type == "io" and is_hydrogen_table):
+            continue
+
+        scenario_key = f"{input_table}_{sector}"
+        input_sectors[scenario_key] = {
+            'input_table': input_table,
+            'sector': sector,
+            'display_name': f"{sector} ({input_table})"
+        }
+
+    if not input_sectors:
+        st.warning(f"No {table_type} input sectors found")
+        return
+
+    # Create tabs for each input sector
+    sector_names = [info['display_name'] for info in input_sectors.values()]
+    sector_tabs = st.tabs(sector_names)
+
+    for i, (sector_key, sector_info) in enumerate(input_sectors.items()):
+        with sector_tabs[i]:
+            st.markdown(f"#### {sector_info['sector']} from {sector_info['input_table']}")
+
+            # Get years with data for this input sector
+            available_years = []
+            for year in individual_results.keys():
+                for scenario_idx, scenario_data in individual_results[year].items():
+                    # Check if this scenario matches our input sector
+                    scenario_idx_num = int(scenario_idx.split('_')[1])
+                    scenario_row = scenario_analyzer.scenarios_data.iloc[scenario_idx_num]
+
+                    if (str(scenario_row['sector']) == sector_info['sector'] and
+                        scenario_row['input'] == sector_info['input_table']):
+                        available_years.append(year)
+                        break
+
+            available_years = sorted(set(available_years))
+
+            if not available_years:
+                st.info(f"No data available for {sector_info['sector']}")
+                continue
+
+            # Display summary metrics for this input sector
+            latest_year = available_years[-1]
+            latest_year_data = None
+
+            # Find the latest year data for this input sector
+            for scenario_idx, scenario_data in individual_results[latest_year].items():
+                scenario_idx_num = int(scenario_idx.split('_')[1])
+                scenario_row = scenario_analyzer.scenarios_data.iloc[scenario_idx_num]
+
+                if (str(scenario_row['sector']) == sector_info['sector'] and
+                    scenario_row['input'] == sector_info['input_table']):
+                    latest_year_data = scenario_data
+                    break
+
+            if latest_year_data:
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric("Years Covered", f"{min(available_years)} - {max(available_years)}")
+                with col2:
+                    st.metric(f"Total Impact ({latest_year})", f"{latest_year_data['total_impact']:,.0f}")
+                with col3:
+                    st.metric(f"Affected Sectors ({latest_year})", latest_year_data['num_affected_sectors'])
+
+            # Create matrix with sectors as rows and years as columns for this input sector
+            if available_years:
+                # Collect all unique output sectors for this input sector across all years
+                all_output_sectors = {}
+                for year in available_years:
+                    for scenario_idx, scenario_data in individual_results[year].items():
+                        scenario_idx_num = int(scenario_idx.split('_')[1])
+                        scenario_row = scenario_analyzer.scenarios_data.iloc[scenario_idx_num]
+
+                        if (str(scenario_row['sector']) == sector_info['sector'] and
+                            scenario_row['input'] == sector_info['input_table']):
+
+                            for impact in scenario_data['result']['impacts']:
+                                sector_code = str(impact['sector_code'])
+                                sector_name = impact['sector_name']
+                                if sector_code not in all_output_sectors:
+                                    all_output_sectors[sector_code] = sector_name
+
+                # Create the matrix for this input sector
+                if all_output_sectors:
+                    matrix_data = []
+                    for sector_code, sector_name in all_output_sectors.items():
+                        row = {
+                            'Sector Code': sector_code,
+                            'Sector Name': sector_name
+                        }
+
+                        # Add data for each year
+                        for year in available_years:
+                            impact_value = 0.0
+
+                            # Find the impact for this output sector in this year for this input sector
+                            for scenario_idx, scenario_data in individual_results[year].items():
+                                scenario_idx_num = int(scenario_idx.split('_')[1])
+                                scenario_row = scenario_analyzer.scenarios_data.iloc[scenario_idx_num]
+
+                                if (str(scenario_row['sector']) == sector_info['sector'] and
+                                    scenario_row['input'] == sector_info['input_table']):
+
+                                    for impact in scenario_data['result']['impacts']:
+                                        if str(impact['sector_code']) == sector_code:
+                                            impact_value = impact['impact']
+                                            break
+                                    break
+
+                            row[str(year)] = impact_value
+
+                        matrix_data.append(row)
+
+                    # Create DataFrame and sort by latest year impact
+                    if matrix_data:
+                        matrix_df = pd.DataFrame(matrix_data)
+
+                        # Sort by the latest year's impact (descending absolute value)
+                        latest_year_col = str(latest_year)
+                        if latest_year_col in matrix_df.columns:
+                            matrix_df['abs_latest'] = matrix_df[latest_year_col].abs()
+                            matrix_df = matrix_df.sort_values('abs_latest', ascending=False)
+                            matrix_df = matrix_df.drop('abs_latest', axis=1)
+
+                        # Ensure all column names are strings
+                        matrix_df.columns = [str(col) for col in matrix_df.columns]
+
+                        # Format numbers for display
+                        display_matrix = matrix_df.copy()
+                        for year in available_years:
+                            year_col = str(year)
+                            if year_col in display_matrix.columns:
+                                display_matrix[year_col] = display_matrix[year_col].apply(lambda x: f"{x:,.2f}" if x != 0 else "0.00")
+
+                        # Ensure display matrix column names are also strings
+                        display_matrix.columns = [str(col) for col in display_matrix.columns]
+
+                        st.markdown("#### Output Sector Impacts by Year (Million KRW)")
+                        st.dataframe(display_matrix, width='stretch', height=400)
+
+                        # Add charts below the table
+                        st.markdown("#### 📈 Trend Charts")
+
+                        # Prepare data for charts
+                        chart_df = matrix_df.copy()
+                        year_columns = [str(year) for year in available_years]
+
+                        # Chart 1: All sectors over time (line chart)
+                        st.markdown("**All Sectors Over Time**")
+
+                        # Create line chart data for ALL sectors
+                        line_chart_data = {}
+                        for _, row in chart_df.iterrows():
+                            sector_label = f"{row['Sector Code']}: {row['Sector Name'][:25]}..."
+                            line_chart_data[sector_label] = [row[year_col] for year_col in year_columns]
+
+                        # Convert to DataFrame for Streamlit
+                        if line_chart_data:
+                            line_df = pd.DataFrame(line_chart_data, index=available_years)
+                            st.line_chart(line_df, height=500)
+
+                        # Chart 2: Total impact by year (aggregate line chart)
+                        st.markdown("**Total Impact by Year**")
+
+                        # Calculate total impact per year
+                        year_totals = {}
+                        for year_col in year_columns:
+                            if year_col in chart_df.columns:
+                                year_totals[int(year_col)] = chart_df[year_col].sum()
+
+                        if year_totals:
+                            total_df = pd.DataFrame(list(year_totals.items()), columns=['Year', 'Total Impact'])
+                            total_df = total_df.set_index('Year')
+                            st.line_chart(total_df, height=300)
+
+                        # Download button for this specific input sector
+                        csv_data = matrix_df.to_csv(index=False)
+                        st.download_button(
+                            label=f"📥 Download {sector_info['sector']} Results",
+                            data=csv_data,
+                            file_name=f"scenario_{effect_type}_{sector_info['sector']}_{sector_info['input_table']}.csv",
+                            mime="text/csv",
+                            key=f"download_{table_type}_{effect_type}_{sector_key}"
+                        )
+                    else:
+                        st.info("No sector impact data available")
+                else:
+                    st.info("No output sector data found")
+            else:
+                st.warning("No years available for analysis")
 
 if __name__ == "__main__":
     main()
