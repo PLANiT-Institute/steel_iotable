@@ -1,8 +1,10 @@
 from libs.io_analyzer import IOTableAnalyzer
+from libs.demandchange import DemandChangeAnalyzer
 
 def main():
     """Main function to run the I-O analysis."""
     analyzer = IOTableAnalyzer()
+    demandchange_analyzer = DemandChangeAnalyzer()
     
     print("\n" + "="*60)
     print("STEEL-COAL I-O TABLE ECONOMIC EFFECTS ANALYZER")
@@ -40,7 +42,12 @@ def main():
                     print("Invalid coefficient type. Using 'indirect_prod' as default.")
                     coeff_type = 'indirect_prod'
                 
-                sector_input = input("Enter sector code (e.g., 111, 0111, or 2711): ").strip()
+                #sector_input = input("Enter sector code (e.g., 111, 0111, or 2711): ").strip()
+
+                print("Choose a scenario sector: ")
+                print(demandchange_analyzer.demand_change_df['sector'])
+                sector_input = str(input("Enter here: ").strip())
+                demandchange_year = int(input("Enter scenario year: ").strip())
                 
                 # Convert input to proper format
                 try:
@@ -53,9 +60,14 @@ def main():
                     # Already a string, use as is
                     sector_code = sector_input
                 
-                demand_change = float(input("Enter demand change amount: "))
-                
-                results = analyzer.calculate_direct_effects(sector_code, demand_change, coeff_type)
+
+
+                demand_change = demandchange_analyzer.get_scenario(sector_input, demandchange_year)
+
+                print(demand_change)
+               
+                results = analyzer.calculate_direct_effects(sector_code, demand_change.item(), coeff_type)
+                print("check1")
                 analyzer.display_results(results)
                 
             except ValueError as e:

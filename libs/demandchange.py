@@ -2,7 +2,7 @@ import pandas as pd
 from typing import Dict
 
 class DemandChangeAnalyzer:
-    def __init__(self, data_file: str = '../data/scenarios.xlsx'):
+    def __init__(self, data_file: str = 'data/scenarios.xlsx'):
         self.data_file = data_file
         self.demand_change_df = None
         self.load_data()
@@ -15,10 +15,10 @@ class DemandChangeAnalyzer:
     def get_scenario(self, sector: str, year: int):
         return self.demand_change_df[self.demand_change_df['sector'] == sector][year]
 
-# if __name__ == "__main__":
-#     analyzer = DemandChangeAnalyzer()
-#     my_sector = input("Please enter the sector: ")
-#     my_year = int(input("Please enter the year: "))
+if __name__ == "__main__":
+    analyzer = DemandChangeAnalyzer()
+    my_sector = input("Please enter the sector: ")
+    my_year = int(input("Please enter the year: "))
 
-#     print(analyzer.get_scenario(my_sector, my_year))
+    print(analyzer.get_scenario(my_sector, my_year).item())
 
