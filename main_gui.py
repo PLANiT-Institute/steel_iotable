@@ -159,22 +159,22 @@ def show_io_analysis():
                 with col1:
                     st.markdown("**💰 Economic Effects Summary**")
                     economic_df = pd.DataFrame(economic_summary)
-                    st.dataframe(economic_df, width='stretch')
+                    st.dataframe(economic_df, use_container_width=True)
                 
                 with col2:
                     st.markdown("**👥 Employment Effects Summary**")
                     job_df = pd.DataFrame(job_summary)
-                    st.dataframe(job_df, width='stretch')
+                    st.dataframe(job_df, use_container_width=True)
             
             elif economic_summary:
                 st.markdown("**💰 Economic Effects Summary**")
                 economic_df = pd.DataFrame(economic_summary)
-                st.dataframe(economic_df, width='stretch')
+                st.dataframe(economic_df, use_container_width=True)
                 
             elif job_summary:
                 st.markdown("**👥 Employment Effects Summary**")
                 job_df = pd.DataFrame(job_summary)
-                st.dataframe(job_df, width='stretch')
+                st.dataframe(job_df, use_container_width=True)
             
             # Combined summary for download (maintain backward compatibility)
             all_summary_data = economic_summary + job_summary

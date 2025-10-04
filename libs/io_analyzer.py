@@ -21,23 +21,23 @@ class IOTableAnalyzer:
         self.mapping = pd.read_excel(self.data_file, sheet_name='basicmap')
         print(f"Loaded {len(self.mapping)} sectors from basicmap sheet")
         
-        # Load direct input coefficients (A)
-        df_A = pd.read_excel(self.data_file, sheet_name='directinputcoeff_A')
-        self.coefficients['A'] = df_A.set_index('code')
-        print(f"Loaded A (direct) coefficient matrix: {self.coefficients['A'].shape}")
+        # # Load direct input coefficients (A)
+        # df_A = pd.read_excel(self.data_file, sheet_name='directinputcoeff_A')
+        # self.coefficients['A'] = df_A.set_index('code')
+        # print(f"Loaded A (direct) coefficient matrix: {self.coefficients['A'].shape}")
         
-        # Load import input coefficients (Am)
-        df_Am = pd.read_excel(self.data_file, sheet_name='importinputcoeff_Am')
-        self.coefficients['Am'] = df_Am.set_index('code')
-        print(f"Loaded Am (import) coefficient matrix: {self.coefficients['Am'].shape}")
+        # # Load import input coefficients (Am)
+        # df_Am = pd.read_excel(self.data_file, sheet_name='importinputcoeff_Am')
+        # self.coefficients['Am'] = df_Am.set_index('code')
+        # print(f"Loaded Am (import) coefficient matrix: {self.coefficients['Am'].shape}")
         
-        # Load domestic coefficients (Ad)
-        df_Ad = pd.read_excel(self.data_file, sheet_name='domesticinputcoeff_Ad')
-        # Clean the column name if needed
-        if 'code' not in df_Ad.columns:
-            df_Ad = df_Ad.rename(columns={df_Ad.columns[0]: 'code'})
-        self.coefficients['Ad'] = df_Ad.set_index('code')
-        print(f"Loaded Ad (domestic) coefficient matrix: {self.coefficients['Ad'].shape}")
+        # # Load domestic coefficients (Ad)
+        # df_Ad = pd.read_excel(self.data_file, sheet_name='domesticinputcoeff_Ad')
+        # # Clean the column name if needed
+        # if 'code' not in df_Ad.columns:
+        #     df_Ad = df_Ad.rename(columns={df_Ad.columns[0]: 'code'})
+        # self.coefficients['Ad'] = df_Ad.set_index('code')
+        # print(f"Loaded Ad (domestic) coefficient matrix: {self.coefficients['Ad'].shape}")
         
         # Load indirect production coefficients (I-Ad)^-1
         df_indirect_prod = pd.read_excel(self.data_file, sheet_name='indirectprodcoeff')
@@ -106,7 +106,7 @@ class IOTableAnalyzer:
         self.code_to_product_display = {}  # For display purposes
         
         # Use first coefficient matrix to check column format
-        sample_coeffs = self.coefficients['A']
+        sample_coeffs = self.coefficients['indirect_prod']
         
         for _, row in self.mapping.iterrows():
             original_code = row['code']
@@ -247,10 +247,10 @@ class IOTableAnalyzer:
         print(f"Target Sector: {results['target_sector']} - {results['target_product']}")
         print(f"Demand Change: {results['demand_change']:,.0f}")
         print(f"Coefficient Type: {results['coeff_type']} ({results['coeff_name']})")
-        print(f"Total Direct Impact: {results['total_impact']:,.2f}")
+        print(f"Total Impact: {results['total_impact']:,.2f}")
         print(f"Affected Sectors: {results['num_affected_sectors']}")
         
-        print(f"\n{'Top 20 Direct Impacts:':<60}")
+        print(f"\n{'Top 20 Impacts:':<60}")
         print(f"{'Code':<6} {'Sector':<35} {'Impact':>15}")
         print("-" * 60)
         
@@ -291,7 +291,7 @@ class IOTableAnalyzer:
         
         # Calculate job effects: coefficient * demand_change
         # Note: Job coefficients represent jobs per unit of output, so result is in number of jobs
-        job_impacts = selected_coeffs[subsector_code] * demand_change
+        job_impacts = selected_coeffs[subsector_code] * demand_change/1000
         
         # Remove zero or near-zero impacts and NaN values
         significant_impacts = job_impacts[(abs(job_impacts) > 1e-6) & pd.notna(job_impacts)]

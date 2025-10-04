@@ -5,13 +5,13 @@ def main():
     analyzer = IOTableAnalyzer()
     
     print("\n" + "="*60)
-    print("STEEL-COAL I-O TABLE DIRECT EFFECTS ANALYZER")
+    print("STEEL-COAL I-O TABLE ECONOMIC EFFECTS ANALYZER")
     print("="*60)
     
     while True:
         print("\nAvailable options:")
         print("1. List all sectors")
-        print("2. Analyze direct effects")
+        print("2. Analyze economic effects")
         print("3. Exit")
         
         choice = input("\nSelect option (1-3): ").strip()
@@ -25,9 +25,9 @@ def main():
         elif choice == '2':
             try:
                 print("\nCoefficient types:")
-                print("A                 - Direct Total coefficients")
-                print("Am                - Direct Import coefficients") 
-                print("Ad                - Direct Domestic coefficients")
+                # print("A                 - Direct Total coefficients")
+                # print("Am                - Direct Import coefficients") 
+                # print("Ad                - Direct Domestic coefficients")
                 print("indirect_prod     - Indirect Production (I-Ad)⁻¹")
                 print("indirect_import   - Indirect Import coefficients")
                 print("value_added       - Value-Added coefficients")
@@ -35,10 +35,10 @@ def main():
                 print("directemploycoeff - Direct Employment coefficients")
                 
                 coeff_type = input("Select coefficient type: ").strip()
-                valid_types = ['A', 'Am', 'Ad', 'indirect_prod', 'indirect_import', 'value_added', 'jobcoeff', 'directemploycoeff']
+                valid_types = ['indirect_prod', 'indirect_import', 'value_added', 'jobcoeff', 'directemploycoeff']
                 if coeff_type not in valid_types:
-                    print("Invalid coefficient type. Using 'A' as default.")
-                    coeff_type = 'A'
+                    print("Invalid coefficient type. Using 'indirect_prod' as default.")
+                    coeff_type = 'indirect_prod'
                 
                 sector_input = input("Enter sector code (e.g., 111, 0111, or 2711): ").strip()
                 
