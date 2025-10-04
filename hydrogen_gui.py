@@ -44,9 +44,9 @@ def show_hydrogen_analysis():
 
         # Calculate all coefficient types
         all_results = {}
-        coefficient_types = ["inputcoeff_A", "valueaddedcoeff", "jobcoeff", "directemploycoeff"]
+        coefficient_types = ["productioncoeff", "valueaddedcoeff", "jobcoeff", "directemploycoeff"]
         coeff_names = {
-            "inputcoeff_A": "Input Coefficients (A)",
+            "productioncoeff": "Production coefficient",
             "valueaddedcoeff": "Value-Added",
             "jobcoeff": "Total Job Creation",
             "directemploycoeff": "Direct Employment"
@@ -70,7 +70,7 @@ def show_hydrogen_analysis():
         st.subheader("📊 Hydrogen Analysis Summary")
         col1, col2, col3, col4 = st.columns(4)
 
-        if all_results["inputcoeff_A"]:
+        if all_results["productioncoeff"]:
             with col1:
                 st.metric("Hydrogen Scenario", selected_scenario)
             with col2:
@@ -93,7 +93,7 @@ def show_hydrogen_analysis():
             job_summary = []
 
             # Separate data by effect type
-            economic_coeffs = ["inputcoeff_A", "valueaddedcoeff"]
+            economic_coeffs = ["productioncoeff", "valueaddedcoeff"]
             job_coeffs = ["jobcoeff", "directemploycoeff"]
 
             for coeff_type in economic_coeffs:
@@ -226,7 +226,7 @@ def show_hydrogen_analysis():
                 st.subheader("📈 Impact Comparison")
 
                 # Separate coefficient types by category
-                economic_coeffs = ["inputcoeff_A", "valueaddedcoeff"]
+                economic_coeffs = ["productioncoeff", "valueaddedcoeff"]
                 job_coeffs = ["jobcoeff", "directemploycoeff"]
 
                 # Create economic effects chart data

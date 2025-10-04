@@ -7,7 +7,7 @@ class HydrogenTableAnalyzer:
         self.data_file = data_file
         self.mapping = None
         self.shock_data = None
-        self.coefficients = {}  # Will store inputcoeff_A, valueaddedcoeff, jobcoeff, directemploycoeff
+        self.coefficients = {}  # Will store productioncoeff, valueaddedcoeff, jobcoeff, directemploycoeff
         self.load_data()
 
     def load_data(self):
@@ -18,14 +18,14 @@ class HydrogenTableAnalyzer:
         self.mapping = pd.read_excel(self.data_file, sheet_name='basicmap')
         print(f"Loaded {len(self.mapping)} sectors from basicmap sheet")
 
-        # Load SHOCK data for additional context
-        self.shock_data = pd.read_excel(self.data_file, sheet_name='SHOCK')
-        print(f"Loaded SHOCK data with {len(self.shock_data)} scenarios")
+        # # Load SHOCK data for additional context
+        # self.shock_data = pd.read_excel(self.data_file, sheet_name='SHOCK')
+        # print(f"Loaded SHOCK data with {len(self.shock_data)} scenarios")
 
-        # Load input coefficients (A)
-        df_A = pd.read_excel(self.data_file, sheet_name='inputcoeff_A')
-        self.coefficients['inputcoeff_A'] = df_A.set_index('code')
-        print(f"Loaded A (input) coefficient matrix: {self.coefficients['inputcoeff_A'].shape}")
+        # Load production coefficient
+        df_A = pd.read_excel(self.data_file, sheet_name='productioncoeff')
+        self.coefficients['productioncoeff'] = df_A.set_index('code')
+        print(f"Loaded A (input) coefficient matrix: {self.coefficients['productioncoeff'].shape}")
 
         # Load value-added coefficients
         df_value_added = pd.read_excel(self.data_file, sheet_name='valueaddedcoeff')
@@ -69,7 +69,7 @@ class HydrogenTableAnalyzer:
         """Return available hydrogen scenarios (H2P, H2S, H2T, H2U)."""
         return ['H2P', 'H2S', 'H2T', 'H2U']
 
-    def calculate_hydrogen_effects(self, scenario: str, demand_change: float, coeff_type: str = 'inputcoeff_A', quiet: bool = False) -> Dict[str, any]:
+    def calculate_hydrogen_effects(self, scenario: str, demand_change: float, coeff_type: str = 'productioncoeff', quiet: bool = False) -> Dict[str, any]:
         """
         Calculate effects of hydrogen scenario using specified coefficient matrix.
 
@@ -89,7 +89,7 @@ class HydrogenTableAnalyzer:
             raise ValueError(f"Coefficient type '{coeff_type}' not available. Choose from: {list(self.coefficients.keys())}")
 
         coeff_names = {
-            'inputcoeff_A': 'Input Coefficients (A)',
+            'productioncoeff': 'Input Coefficients (A)',
             'valueaddedcoeff': 'Value-Added Coefficients',
             'jobcoeff': 'Total Job Creation',
             'directemploycoeff': 'Direct Employment'
@@ -107,7 +107,11 @@ class HydrogenTableAnalyzer:
             raise ValueError(f"Column for scenario {scenario} not found in {coeff_type} coefficient matrix")
 
         # Calculate direct effects: coefficient * demand_change
-        direct_impacts = selected_coeffs[scenario] * demand_change
+        if coeff_type == "jobcoeff" or coeff_type == "directemploycoeff":
+            direct_impacts = selected_coeffs[scenario] * demand_change/1000
+
+        else:
+            direct_impacts = selected_coeffs[scenario] * demand_change
 
         # Remove zero or near-zero impacts and NaN values
         significant_impacts = direct_impacts[(abs(direct_impacts) > 1e-6) & pd.notna(direct_impacts)]
@@ -159,6 +163,6 @@ class HydrogenTableAnalyzer:
         if len(results['impacts']) > 20:
             print(f"\n... and {len(results['impacts']) - 20} more sectors with smaller impacts")
 
-    def get_shock_data(self) -> pd.DataFrame:
-        """Return the SHOCK data for reference."""
-        return self.shock_data
+    # def get_shock_data(self) -> pd.DataFrame:
+    #     """Return the SHOCK data for reference."""
+    #     return self.shock_data
