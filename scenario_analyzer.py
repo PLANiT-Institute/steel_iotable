@@ -44,13 +44,12 @@ class ScenarioAnalyzer:
         """
         if self.hydrogen_analyzer is None or self.io_analyzer is None:
             self.initialize_analyzers()
-
         if effect_types is None:
             # Default effect types based on available coefficient matrices
             effect_types = [
-                'inputcoeff_A',  # Input coefficients (for hydrogen)
-                'A',  # Direct total (for IO)
-                'Ad',  # Direct domestic (for IO)
+                'productioncoeff',  # (for hydrogen)
+                'indirect_prod',  # (for IO)
+                'indirect_import',  # (for IO)
                 'jobcoeff',  # Job creation
                 'valueaddedcoeff',  # Value added (hydrogen)
                 'value_added'  # Value added (IO)
@@ -90,7 +89,7 @@ class ScenarioAnalyzer:
                     try:
                         if is_hydrogen:
                             # Use hydrogen analyzer
-                            if effect_type in ['inputcoeff_A', 'valueaddedcoeff', 'jobcoeff', 'directemploycoeff']:
+                            if effect_type in ['productioncoeff', 'valueaddedcoeff', 'jobcoeff', 'directemploycoeff']:
                                 result = self.hydrogen_analyzer.calculate_hydrogen_effects(
                                     scenario=sector,
                                     demand_change=demand_change,
@@ -101,18 +100,18 @@ class ScenarioAnalyzer:
 
                         else:
                             # Use IO analyzer - convert sector to proper format for IO table
-                            try:
-                                # Try to convert sector to int if it's a numeric string
-                                if sector.isdigit():
-                                    target_sector = int(sector)
-                                else:
-                                    target_sector = sector
-                            except (ValueError, AttributeError):
-                                target_sector = sector
+                            # try:
+                            #     # Try to convert sector to int if it's a numeric string
+                            #     if sector.isdigit():
+                            #         target_sector = int(sector)
+                            #     else:
+                            #         target_sector = sector
+                            # except (ValueError, AttributeError):
+                            #     target_sector = sector
 
-                            if effect_type in ['A', 'Am', 'Ad', 'indirect_prod', 'indirect_import', 'value_added', 'jobcoeff', 'directemploycoeff']:
+                            if effect_type in [ 'indirect_prod', 'indirect_import', 'value_added', 'jobcoeff', 'directemploycoeff']:
                                 result = self.io_analyzer.calculate_direct_effects(
-                                    target_sector=target_sector,
+                                    target_sector=sector,
                                     demand_change=demand_change,
                                     coeff_type=effect_type,
                                     quiet=True

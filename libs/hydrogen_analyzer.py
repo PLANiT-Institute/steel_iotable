@@ -32,12 +32,12 @@ class HydrogenTableAnalyzer:
         self.coefficients['valueaddedcoeff'] = df_value_added.set_index('code')
         print(f"Loaded value-added coefficient matrix: {self.coefficients['valueaddedcoeff'].shape}")
 
-        # Load job coefficients (total job creation)
+        # Load job coefficients (total job creation) 임금유발효과
         df_jobcoeff = pd.read_excel(self.data_file, sheet_name='jobcoeff')
         self.coefficients['jobcoeff'] = df_jobcoeff.set_index('code')
         print(f"Loaded job coefficient matrix: {self.coefficients['jobcoeff'].shape}")
 
-        # Load direct employment coefficients
+        # Load direct employment coefficients 취업유발효과
         df_directemploy = pd.read_excel(self.data_file, sheet_name='directemploycoeff')
         self.coefficients['directemploycoeff'] = df_directemploy.set_index('code')
         print(f"Loaded direct employment coefficient matrix: {self.coefficients['directemploycoeff'].shape}")
@@ -91,8 +91,8 @@ class HydrogenTableAnalyzer:
         coeff_names = {
             'productioncoeff': 'Input Coefficients (A)',
             'valueaddedcoeff': 'Value-Added Coefficients',
-            'jobcoeff': 'Total Job Creation',
-            'directemploycoeff': 'Direct Employment'
+            'jobcoeff': 'Wage-inducing effect',
+            'directemploycoeff': 'Total job creation'
         }
 
         if not quiet:
@@ -107,7 +107,7 @@ class HydrogenTableAnalyzer:
             raise ValueError(f"Column for scenario {scenario} not found in {coeff_type} coefficient matrix")
 
         # Calculate direct effects: coefficient * demand_change
-        if coeff_type == "jobcoeff" or coeff_type == "directemploycoeff":
+        if coeff_type == "directemploycoeff":
             direct_impacts = selected_coeffs[scenario] * demand_change/1000
 
         else:
@@ -130,7 +130,10 @@ class HydrogenTableAnalyzer:
         results.sort(key=lambda x: abs(x['impact']), reverse=True)
 
         # Calculate summary statistics
-        total_impact = sum([r['impact'] for r in results])
+        if coeff_type == "directemploycoeff":
+            total_job_impact = sum([r['impact'] for r in results])
+        else:
+            total_economic_impact = sum([r['impact'] for r in results])
 
         return {
             'scenario': scenario,
@@ -138,7 +141,8 @@ class HydrogenTableAnalyzer:
             'coeff_type': coeff_type,
             'coeff_name': coeff_names[coeff_type],
             'impacts': results,
-            'total_impact': total_impact,
+            'total_job_impact': total_job_impact,
+            'total_economic_impact' : total_economic_impact,
             'num_affected_sectors': len(results)
         }
 
@@ -150,7 +154,8 @@ class HydrogenTableAnalyzer:
         print(f"Hydrogen Scenario: {results['scenario']}")
         print(f"Demand Change: {results['demand_change']:,.0f}")
         print(f"Coefficient Type: {results['coeff_type']} ({results['coeff_name']})")
-        print(f"Total Impact: {results['total_impact']:,.2f}")
+        print(f"Total Economic Impact: {results['total_economic_impact']:,.2f}")
+        print(f"Total Job Impact: {results['total_job_impact']:,.2f}")
         print(f"Affected Sectors: {results['num_affected_sectors']}")
 
         print(f"\n{'Top 20 Impacts:':<60}")

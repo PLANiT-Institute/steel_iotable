@@ -1,3 +1,4 @@
+from re import U
 import streamlit as st
 import pandas as pd
 from libs.io_analyzer import IOTableAnalyzer
@@ -74,11 +75,11 @@ def show_io_analysis():
         
         # Calculate all coefficient types including job coefficients
         all_results = {}
-        coefficient_types = ["A", "Am", "Ad", "indirect_prod", "indirect_import", "value_added", "jobcoeff", "directemploycoeff"]
+        coefficient_types = ["indirect_prod", "indirect_import", "value_added", "jobcoeff", "directemploycoeff"]
         coeff_names = {
-            "A": "Direct Total",
-            "Am": "Direct Import", 
-            "Ad": "Direct Domestic",
+            #"A": "Direct Total",
+            #"Am": "Direct Import", 
+            #"Ad": "Direct Domestic",
             "indirect_prod": "Indirect Production",
             "indirect_import": "Indirect Import",
             "value_added": "Value-Added",
@@ -104,11 +105,11 @@ def show_io_analysis():
         st.subheader("📊 Analysis Summary")
         col1, col2, col3, col4 = st.columns(4)
         
-        if all_results["A"]:
+        if all_results["indirect_prod"]:
             with col1:
                 st.metric("Target Sector", f"{selected_sector}")
             with col2:
-                st.metric("Product", all_results["A"]["target_product"])
+                st.metric("Product", all_results["indirect_prod"]["target_product"])
             with col3:
                 st.metric("Demand Change", f"{demand_change:,.0f}")
             with col4:
@@ -127,7 +128,7 @@ def show_io_analysis():
             job_summary = []
             
             # Separate data by effect type
-            economic_coeffs = ["A", "Am", "Ad", "indirect_prod", "indirect_import", "value_added"]
+            economic_coeffs = ["indirect_prod", "indirect_import", "value_added"]
             job_coeffs = ["jobcoeff", "directemploycoeff"]
             
             for coeff_type in economic_coeffs:
@@ -260,7 +261,7 @@ def show_io_analysis():
                 st.subheader("📈 Impact Comparison")
                 
                 # Separate coefficient types by category
-                economic_coeffs = ["A", "Am", "Ad", "indirect_prod", "indirect_import", "value_added"]
+                economic_coeffs = ["indirect_prod", "indirect_import", "value_added"]
                 job_coeffs = ["jobcoeff", "directemploycoeff"]
                 
                 # Create economic effects chart data
@@ -367,7 +368,7 @@ def show_io_analysis():
                     # Display table
                     st.dataframe(
                         display_df,
-                        width='stretch',
+                        width=600,
                         height=600
                     )
                     
@@ -435,7 +436,6 @@ def show_scenario_analysis():
             # Display scenario overview
             st.subheader("📋 Scenario Overview")
             preview_df = scenario_analyzer.scenarios_data.copy()
-
             # Fix data types for Arrow compatibility
             preview_df['input'] = preview_df['input'].astype(str)
             preview_df['sector'] = preview_df['sector'].astype(str)
@@ -443,11 +443,13 @@ def show_scenario_analysis():
             # Convert all column names to strings for consistency
             preview_df.columns = [str(col) for col in preview_df.columns]
 
-            st.dataframe(preview_df, width='stretch')
+            st.dataframe(preview_df, use_container_width=True)
 
             # Years covered
             year_columns = [col for col in scenario_analyzer.scenarios_data.columns if isinstance(col, int)]
+
             st.info(f"**Years covered:** {min(year_columns)} - {max(year_columns)} ({len(year_columns)} years)")
+            #st.info(f"**Years covered:** {min_year} - {max_year} ({len(data_cols-2)} years)")
 
         except Exception as e:
             st.error(f"❌ Error loading scenarios: {str(e)}")
@@ -463,11 +465,11 @@ def show_scenario_analysis():
 
         # Define all effect types to analyze
         all_effect_types = [
-            'inputcoeff_A',        # Input coefficients (hydrogen)
+            #'inputcoeff_A',        # Input coefficients (hydrogen)
             'valueaddedcoeff',     # Value added (hydrogen)
-            'A',                   # Direct total (IO)
-            'Am',                  # Direct import (IO)
-            'Ad',                  # Direct domestic (IO)
+            #'A',                   # Direct total (IO)
+            #'Am',                  # Direct import (IO)
+            #'Ad',                  # Direct domestic (IO)
             'indirect_prod',       # Indirect production (IO)
             'indirect_import',     # Indirect import (IO)
             'value_added',         # Value added (IO)
@@ -498,8 +500,8 @@ def show_scenario_analysis():
         st.subheader("📈 Analysis Results")
 
         # Separate results by table type and input source
-        io_effects = ['A', 'Am', 'Ad', 'indirect_prod', 'indirect_import', 'value_added']
-        hydrogen_effects = ['inputcoeff_A', 'valueaddedcoeff']
+        io_effects = [ 'indirect_prod', 'indirect_import', 'value_added']
+        hydrogen_effects = ['productioncoeff', 'valueaddedcoeff']
         io_job_effects = ['jobcoeff', 'directemploycoeff']  # Job effects for IO scenarios
         hydrogen_job_effects = ['jobcoeff', 'directemploycoeff']  # Job effects for Hydrogen scenarios
 
@@ -517,9 +519,9 @@ def show_scenario_analysis():
             if available_io_effects or available_io_job_effects:
                 # Effect type descriptions for IO
                 io_effect_descriptions = {
-                    'A': 'Direct Total Effects',
-                    'Am': 'Direct Import Effects',
-                    'Ad': 'Direct Domestic Effects',
+                   # 'A': 'Direct Total Effects',
+                   # 'Am': 'Direct Import Effects',
+                   # 'Ad': 'Direct Domestic Effects',
                     'indirect_prod': 'Indirect Production Effects',
                     'indirect_import': 'Indirect Import Effects',
                     'value_added': 'Value Added Effects',
@@ -810,7 +812,7 @@ def _display_effect_results(effect_type, results, scenario_analyzer, effect_desc
                         display_matrix.columns = [str(col) for col in display_matrix.columns]
 
                         st.markdown("#### Output Sector Impacts by Year (Million KRW)")
-                        st.dataframe(display_matrix, width='stretch', height=400)
+                        st.dataframe(display_matrix, Use_container_width=True, height=400)
 
                         # Add charts below the table
                         st.markdown("#### 📈 Trend Charts")
