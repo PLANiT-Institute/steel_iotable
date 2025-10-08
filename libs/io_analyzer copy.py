@@ -16,23 +16,9 @@ class IOTableAnalyzer:
     def load_data(self):
         """Load mapping and all three coefficient matrices from Excel file."""
         print("Loading I-O Table data...")
-
-        def format_code(code):
-            code_str = str(code).strip()
-            if code_str.isdigit() and len(code_str) == 3:
-                return f"0{code_str}"
-            return code_str
-
-        def format_subsector_code(code):
-            try:
-                code_int = int(float(code))
-                return f"{code_int:03d}"
-            except (ValueError, TypeError):
-                return str(code).strip()
         
         # Load mapping sheet
         self.mapping = pd.read_excel(self.data_file, sheet_name='basicmap')
-        self.mapping['code'] = self.mapping['code'].apply(format_code)
         print(f"Loaded {len(self.mapping)} sectors from basicmap sheet")
         
         # # Load direct input coefficients (A)
@@ -78,40 +64,6 @@ class IOTableAnalyzer:
         self.coefficients['directemploycoeff'] = df_directemploy.set_index('code')
         print(f"Loaded direct employment coefficient matrix: {self.coefficients['directemploycoeff'].shape}")
         
-        basic_coeff_sheets = {
-            'indirect_prod': 'indirectprodcoeff',
-            'indirect_import': 'indirectimportcoeff',
-            'value_added': 'valueaddedcoeff'
-        }
-
-        for name, sheet in basic_coeff_sheets.items():
-            df = pd.read_excel(self.data_file, sheet_name=sheet)
-            
-            # (수정 포인트 3) 첫 번째 열(인덱스)의 형식을 통일
-            df = df.rename(columns={df.columns[0]: 'code'})
-            df['code'] = df['code'].apply(format_code)
-            df = df.set_index('code')
-            
-            # (수정 포인트 4) 나머지 모든 열(컬럼)의 형식도 통일
-            df.columns = [format_code(col) for col in df.columns]
-            
-            self.coefficients[name] = df
-            print(f"Loaded {name} coefficient matrix: {df.shape} (formatted)")
-
-        job_coeff_sheets = {
-            'jobcoeff': 'jobcoeff',
-            'directemploycoeff': 'directemploycoeff'
-        }
-        for name, sheet in job_coeff_sheets.items():
-            df = pd.read_excel(self.data_file, sheet_name=sheet)
-            df = df.rename(columns={df.columns[0]: 'code'})
-            # 인덱스와 컬럼 모두 3자리 소분류 코드 형식으로 통일
-            df['code'] = df['code'].apply(format_subsector_code)
-            df = df.set_index('code')
-            df.columns = [format_subsector_code(col) for col in df.columns]
-            self.coefficients[name] = df
-            print(f"Loaded {name} coefficient matrix: {df.shape} (sub-sector formatted)")
-
         # Load codemap for basic-to-subsector mapping
         self.codemap = pd.read_excel(self.data_file, sheet_name='codemap')
         print(f"Loaded codemap with {len(self.codemap)} sector mappings")
@@ -119,10 +71,10 @@ class IOTableAnalyzer:
         # Load subsectormap for sub-sector names
         self.subsectormap = pd.read_excel(self.data_file, sheet_name='subsectormap')
         print(f"Loaded subsectormap with {len(self.subsectormap)} sub-sector names")
-
+        
         # Create sub-sector code to name mapping
         for _, row in self.subsectormap.iterrows():
-            subsector_code = format_subsector_code(row['code'])
+            subsector_code = row['code']
             subsector_name = row['name']
             self.subsector_to_name[subsector_code] = subsector_name
         
@@ -130,9 +82,22 @@ class IOTableAnalyzer:
         
         # Create basic-to-subsector mapping
         for _, row in self.codemap.iterrows():
-            basic_code = format_code(row['Basic']) # 4자리 형식 적용
-            subsector_code = format_subsector_code(row['Sub-sector']) # 3자리 형식 적용
-            self.basic_to_subsector[basic_code] = subsector_code
+            basic_code = row['Basic']
+            subsector_code = row['Sub-sector']
+            
+            # Format basic code consistently (same logic as main mapping)
+            if int(basic_code) < 1000:
+                formatted_basic = f"0{basic_code}"
+            else:
+                formatted_basic = str(basic_code)
+                
+            # Format subsector code (typically 2-3 digit codes)
+            if int(subsector_code) < 100:
+                formatted_subsector = f"0{subsector_code:02d}"  # Ensure 3 digits with leading zeros
+            else:
+                formatted_subsector = f"{subsector_code:03d}"
+                
+            self.basic_to_subsector[formatted_basic] = formatted_subsector
         
         print(f"Created basic-to-subsector mapping for {len(self.basic_to_subsector)} sectors")
         
@@ -143,29 +108,51 @@ class IOTableAnalyzer:
         # Use first coefficient matrix to check column format
         sample_coeffs = self.coefficients['indirect_prod']
         
-
-        self.code_to_product = pd.Series(self.mapping['product'].values, index=self.mapping['code']).to_dict()
-        self.code_to_product_display = {code: f"{code}: {product}" for code, product in self.code_to_product.items()}
-        print(f"Created code_to_product mapping with {len(self.code_to_product)} entries.")
-
+        for _, row in self.mapping.iterrows():
+            original_code = row['code']
+            product = row['product']
+            
+            # Convert code to proper format for coefficient matrix lookup
+            if original_code < 1000:
+                # 3-digit codes become strings with leading zero (111 -> "0111")  
+                formatted_code = f"0{original_code}"
+            else:
+                # 4-digit codes: check if they exist as integers or strings in coefficient matrix
+                if original_code in sample_coeffs.columns:
+                    formatted_code = original_code  # Keep as integer
+                elif str(original_code) in sample_coeffs.columns:
+                    formatted_code = str(original_code)  # Convert to string
+                else:
+                    formatted_code = original_code  # Default to integer
+            
+            self.code_to_product[formatted_code] = product
+            # Store display version showing the actual coefficient matrix code format
+            self.code_to_product_display[formatted_code] = f"{formatted_code}: {product}"
         
-        print(f"Final code_to_product mapping size: {len(self.code_to_product)}")
-        if len(self.code_to_product) != 380 and len(self.code_to_product_display) != 411:
-            print("WARNING: Mapping dictionary size is not 380!")
-            # 매핑에 없는 부문 코드 찾기 (고급 디버깅)
-            map_codes = set(self.mapping['code'].astype(str))
-            mapped_keys = set(str(k) for k in self.code_to_product.keys())
-            missing_in_map = map_codes - mapped_keys
-            print(f"Codes in basicmap but missing in final mapping: {missing_in_map}")
+        # print(f"Final code_to_product mapping size: {len(self.code_to_product)}")
+        # if len(self.code_to_product) != 380:
+        #     print("WARNING: Mapping dictionary size is not 380!")
+        #     # 매핑에 없는 부문 코드 찾기 (고급 디버깅)
+        #     map_codes = set(self.mapping['code'].astype(str))
+        #     mapped_keys = set(str(k) for k in self.code_to_product.keys())
+        #     missing_in_map = map_codes - mapped_keys
+        #     print(f"Codes in basicmap but missing in final mapping: {missing_in_map}")
 
-        #print("Data loading complete!")
+        print("Data loading complete!")
     
     def get_sector_options(self) -> Dict:
         """Return all available sector codes and their products for display."""
         return self.code_to_product_display
     
     def get_sector_from_display(self, display_string: str):
-        return display_string.split(":")[0]
+        """Extract the formatted sector code from display string."""
+        code_part = display_string.split(":")[0]
+        # If it's a string starting with "0", keep it as string
+        if code_part.startswith("0"):
+            return code_part
+        else:
+            # Otherwise convert to integer
+            return int(code_part)
     
     def calculate_direct_effects(self, target_sector, demand_change: float, coeff_type: str = 'indirect_prod', quiet: bool = False) -> Dict[str, any]:
         """
@@ -289,11 +276,17 @@ class IOTableAnalyzer:
         """
         target_product = self.code_to_product[target_sector]
         
+        # Convert target_sector to string format for basic_to_subsector mapping
+        if isinstance(target_sector, int):
+            target_sector_str = str(target_sector)
+        else:
+            target_sector_str = target_sector
+            
         # Find the sub-sector code for this basic sector
-        if target_sector not in self.basic_to_subsector:
-            raise ValueError(f"Sub-sector mapping not found for basic sector {target_sector}")
+        if target_sector_str not in self.basic_to_subsector:
+            raise ValueError(f"Sub-sector mapping not found for basic sector {target_sector_str}")
         
-        subsector_code = self.basic_to_subsector[target_sector]
+        subsector_code = self.basic_to_subsector[target_sector_str]
         
         if not quiet:
             print(f"Basic sector {target_sector} maps to sub-sector {subsector_code}")
@@ -318,7 +311,7 @@ class IOTableAnalyzer:
             # For job coefficients, sector_code represents the sub-sector experiencing job impact
             # Use subsectormap to get proper sub-sector names
             if sector_code in self.subsector_to_name:
-                sector_name = self.subsector_to_name.get(sector_code, f"Sub-sector {sector_code}")
+                sector_name = f"{self.subsector_to_name[sector_code]}"
             else:
                 sector_name = f"Sub-sector {sector_code}"  # Fallback if name not found
             
@@ -348,6 +341,7 @@ class IOTableAnalyzer:
 
 if __name__ == "__main__":
     analyzer = IOTableAnalyzer()
+    print(analyzer.load_data())
 
-    results = analyzer.calculate_direct_effects("1610", 345000, 'indirect_prod')
-    analyzer.display_results(results)
+    #results = analyzer.calculate_direct_effects("1610", 345000, 'indirect_prod')
+    #analyzer.display_results(results)
