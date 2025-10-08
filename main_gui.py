@@ -147,7 +147,7 @@ def show_io_analysis():
                     results = all_results[coeff_type]
                     job_summary.append({
                         'Coefficient Type': f"{coeff_names[coeff_type]} ({coeff_type})",
-                        'Total Jobs (person/billion won)': f"{results['total_job_impact']:,.0f}",
+                        'Total Jobs (person/billion won)': f"{results['total_impact']:,.0f}",
                         'Affected Sub-sectors': results['num_affected_sectors'],
                         'Top Impact Sub-sector': results['impacts'][0]['sector_name'] if results['impacts'] else 'None',
                         'Top Impact Value': f"{results['impacts'][0]['impact']:,.0f}" if results['impacts'] else '0'
