@@ -145,7 +145,7 @@ class IOTableAnalyzer:
             # Otherwise convert to integer
             return int(code_part)
     
-    def calculate_direct_effects(self, target_sector, demand_change: float, coeff_type: str = 'A', quiet: bool = False) -> Dict[str, any]:
+    def calculate_direct_effects(self, target_sector, demand_change: float, coeff_type: str = 'indirect_prod', quiet: bool = False) -> Dict[str, any]:
         """
         Calculate effects of demand change in target sector using specified coefficient matrix.
         
@@ -181,9 +181,9 @@ class IOTableAnalyzer:
         
         target_product = self.code_to_product[final_target_sector]
         coeff_names = {
-            'A': 'Direct Total', 
-            'Am': 'Direct Import', 
-            'Ad': 'Direct Domestic',
+           # 'A': 'Direct Total', 
+            #'Am': 'Direct Import', 
+            #'Ad': 'Direct Domestic',
             'indirect_prod': 'Indirect Production (I-Ad)⁻¹',
             'indirect_import': 'Indirect Import',
             'value_added': 'Value-Added',

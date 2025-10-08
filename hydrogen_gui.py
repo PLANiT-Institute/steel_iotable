@@ -29,7 +29,7 @@ def show_hydrogen_analysis():
     )
 
     demand_change = st.sidebar.number_input(
-        "Demand Change",
+        "Demand Change (Unit: million won)",
         value=1000000,
         step=100000,
         format="%d",
@@ -94,17 +94,17 @@ def show_hydrogen_analysis():
 
             # Separate data by effect type
             economic_coeffs = ["productioncoeff", "valueaddedcoeff"]
-            job_coeffs = ["jobcoeff", "directemploycoeff"]
+            job_coeffs = ["directemploycoeff"]
 
             for coeff_type in economic_coeffs:
                 if all_results[coeff_type]:
                     results = all_results[coeff_type]
                     economic_summary.append({
                         'Coefficient Type': f"{coeff_names[coeff_type]} ({coeff_type})",
-                        'Total Economic Impact': f"{results['total_economic_impact']:,.0f}",
+                        'Total Economic Impact (million won)': f"{results['total_economic_impact']:,.0f}",
                         'Affected Sectors': results['num_affected_sectors'],
                         'Top Impact Sector': results['impacts'][0]['sector_name'] if results['impacts'] else 'None',
-                        'Top Impact Value': f"{results['impacts'][0]['impact']:,.0f}" if results['impacts'] else '0'
+                        'Top Impact Value (million won)': f"{results['impacts'][0]['impact']:,.0f}" if results['impacts'] else '0'
                     })
 
             for coeff_type in job_coeffs:
@@ -112,7 +112,7 @@ def show_hydrogen_analysis():
                     results = all_results[coeff_type]
                     job_summary.append({
                         'Coefficient Type': f"{coeff_names[coeff_type]} ({coeff_type})",
-                        'Total Jobs': f"{results['total_job_impact']:,.0f}",
+                        'Total Jobs (person/billion won)': f"{results['total_job_impact']:,.0f}",
                         'Affected Sectors': results['num_affected_sectors'],
                         'Top Impact Sector': results['impacts'][0]['sector_name'] if results['impacts'] else 'None',
                         'Top Impact Value': f"{results['impacts'][0]['impact']:,.0f}" if results['impacts'] else '0'

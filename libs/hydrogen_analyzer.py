@@ -25,7 +25,7 @@ class HydrogenTableAnalyzer:
         # Load production coefficient
         df_A = pd.read_excel(self.data_file, sheet_name='productioncoeff')
         self.coefficients['productioncoeff'] = df_A.set_index('code')
-        print(f"Loaded A (input) coefficient matrix: {self.coefficients['productioncoeff'].shape}")
+        print(f"Loaded production-inducing coefficient matrix: {self.coefficients['productioncoeff'].shape}")
 
         # Load value-added coefficients
         df_value_added = pd.read_excel(self.data_file, sheet_name='valueaddedcoeff')
@@ -35,12 +35,12 @@ class HydrogenTableAnalyzer:
         # Load job coefficients (total job creation) 임금유발효과
         df_jobcoeff = pd.read_excel(self.data_file, sheet_name='jobcoeff')
         self.coefficients['jobcoeff'] = df_jobcoeff.set_index('code')
-        print(f"Loaded job coefficient matrix: {self.coefficients['jobcoeff'].shape}")
+        print(f"Loaded wage-inducing coefficient matrix: {self.coefficients['jobcoeff'].shape}")
 
         # Load direct employment coefficients 취업유발효과
         df_directemploy = pd.read_excel(self.data_file, sheet_name='directemploycoeff')
         self.coefficients['directemploycoeff'] = df_directemploy.set_index('code')
-        print(f"Loaded direct employment coefficient matrix: {self.coefficients['directemploycoeff'].shape}")
+        print(f"Loaded job creation coefficient matrix: {self.coefficients['directemploycoeff'].shape}")
 
         # Create code-to-product mapping dictionary
         self.code_to_product = {}
@@ -89,10 +89,10 @@ class HydrogenTableAnalyzer:
             raise ValueError(f"Coefficient type '{coeff_type}' not available. Choose from: {list(self.coefficients.keys())}")
 
         coeff_names = {
-            'productioncoeff': 'Input Coefficients (A)',
+            'productioncoeff': 'Production-inducing Coefficients',
             'valueaddedcoeff': 'Value-Added Coefficients',
-            'jobcoeff': 'Wage-inducing effect',
-            'directemploycoeff': 'Total job creation'
+            'jobcoeff': 'Wage-inducing Coefficients',
+            'directemploycoeff': 'Total job creation Coefficients'
         }
 
         if not quiet:
@@ -152,10 +152,10 @@ class HydrogenTableAnalyzer:
         print(f"HYDROGEN EFFECTS ANALYSIS - {results['coeff_name'].upper()}")
         print(f"{'='*60}")
         print(f"Hydrogen Scenario: {results['scenario']}")
-        print(f"Demand Change: {results['demand_change']:,.0f}")
+        print(f"Demand Change (million won): {results['demand_change']:,.0f}")
         print(f"Coefficient Type: {results['coeff_type']} ({results['coeff_name']})")
-        print(f"Total Economic Impact: {results['total_economic_impact']:,.2f}")
-        print(f"Total Job Impact: {results['total_job_impact']:,.2f}")
+        print(f"Total Economic Impact (million won): {results['impacts'] == 'productioncoeff':,.2f}")
+        print(f"Total Job Impact (person/billion won): {results['total_job_impact']:,.2f}")
         print(f"Affected Sectors: {results['num_affected_sectors']}")
 
         print(f"\n{'Top 20 Impacts:':<60}")

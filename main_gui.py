@@ -60,7 +60,7 @@ def show_io_analysis():
     selected_sector = analyzer.get_sector_from_display(selected_sector_display)
     
     demand_change = st.sidebar.number_input(
-        "Demand Change",
+        "Demand Change (million won)",
         value=1000000,
         step=100000,
         format="%d",
@@ -80,8 +80,8 @@ def show_io_analysis():
             #"A": "Direct Total",
             #"Am": "Direct Import", 
             #"Ad": "Direct Domestic",
-            "indirect_prod": "Indirect Production",
-            "indirect_import": "Indirect Import",
+            "indirect_prod": "Production-inducing",
+            "indirect_import": "Import-inducing",
             "value_added": "Value-Added",
             "jobcoeff": "Total Job Creation",
             "directemploycoeff": "Direct Employment"
@@ -116,12 +116,12 @@ def show_io_analysis():
                 st.metric("Analysis Types", len([r for r in all_results.values() if r is not None]))
         
         # Create tabs: Summary first, then each coefficient type
-        tab_names = ["📊 Summary"] + [f"{coeff_names[ct]} ({ct})" for ct in coefficient_types]
+        tab_names = ["📊 Total"] + [f"{coeff_names[ct]}" for ct in coefficient_types]
         tabs = st.tabs(tab_names)
         
         # Summary tab (first tab)
         with tabs[0]:
-            st.subheader("📊 Complete Analysis Summary")
+            st.subheader("📊 Summary")
             
             # Overall comparison table - separate economic and job effects
             economic_summary = []
@@ -136,7 +136,7 @@ def show_io_analysis():
                     results = all_results[coeff_type]
                     economic_summary.append({
                         'Coefficient Type': f"{coeff_names[coeff_type]} ({coeff_type})",
-                        'Total Impact': f"{results['total_impact']:,.0f}",
+                        #'Total Impact (million won)': f"{results['impact'] == 'indirect_prod':,.0f}",
                         'Affected Sectors': results['num_affected_sectors'],
                         'Top Impact Sector': results['impacts'][0]['sector_name'] if results['impacts'] else 'None',
                         'Top Impact Value': f"{results['impacts'][0]['impact']:,.0f}" if results['impacts'] else '0'
@@ -147,7 +147,7 @@ def show_io_analysis():
                     results = all_results[coeff_type]
                     job_summary.append({
                         'Coefficient Type': f"{coeff_names[coeff_type]} ({coeff_type})",
-                        'Total Jobs': f"{results['total_impact']:,.0f}",
+                        'Total Jobs (person/billion won)': f"{results['total_job_impact']:,.0f}",
                         'Affected Sub-sectors': results['num_affected_sectors'],
                         'Top Impact Sub-sector': results['impacts'][0]['sector_name'] if results['impacts'] else 'None',
                         'Top Impact Value': f"{results['impacts'][0]['impact']:,.0f}" if results['impacts'] else '0'
@@ -212,7 +212,7 @@ def show_io_analysis():
                                     ['Target Product', results['target_product'], ''],
                                     ['Demand Change', results['demand_change'], ''],
                                     ['Coefficient Type', f"{results['coeff_name']} ({coeff_type})", ''],
-                                    ['Total Impact', results['total_impact'], ''],
+                                    ['Indirect Production Impact', all_results['indirect_prod']['impact'] if 'indirect_prod' in all_results and 'impact' in all_results['indirect_prod'] else '', ''],
                                     ['', '', ''],
                                     ['Sector Code', 'Sector Name', 'Impact']
                                 ], columns=['Sector Code', 'Sector Name', 'Impact'])
@@ -325,7 +325,7 @@ def show_io_analysis():
                     job_df = pd.DataFrame(job_chart_data)
                     col1, col2 = st.columns(2)
                     with col1:
-                        st.bar_chart(job_df.set_index('Coefficient Type')['Total Jobs'])
+                        st.bar_chart(job_df.set_index('Coefficient Type')['Total Jobs (person/billion won)'])
                         st.caption("Total Jobs Created/Affected")
                     with col2:
                         st.bar_chart(job_df.set_index('Coefficient Type')['Affected Sub-sectors'])
@@ -345,7 +345,7 @@ def show_io_analysis():
                 # Summary metrics for this coefficient type
                 col1, col2, col3 = st.columns(3)
                 with col1:
-                    st.metric("Total Impact", f"{results['total_impact']:,.0f}")
+                    st.metric("Total Economic Impact (domestic; million won)", f"{results['impacts']}")
                 with col2:
                     st.metric("Affected Sectors", results['num_affected_sectors'])
                 with col3:
@@ -627,7 +627,8 @@ def show_scenario_analysis():
                                     'year': year,
                                     'sector_code': sector['sector_code'],
                                     'sector_name': sector['sector_name'],
-                                    'total_impact': sector['total_impact'],
+                                    'total_domestic_impact': sector['total_domestic_impact'],
+                                    'total_import_impact': sector['total_import_impact'],
                                     'avg_impact': sector['avg_impact'],
                                     'scenario_count': sector['scenario_count']
                                 })
