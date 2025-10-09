@@ -46,10 +46,10 @@ def show_hydrogen_analysis():
         all_results = {}
         coefficient_types = ["productioncoeff", "valueaddedcoeff", "jobcoeff", "directemploycoeff"]
         coeff_names = {
-            "productioncoeff": "Production coefficient",
-            "valueaddedcoeff": "Value-Added",
-            "jobcoeff": "Total Job Creation",
-            "directemploycoeff": "Direct Employment"
+            "productioncoeff": "Production-inducing effect",
+            "valueaddedcoeff": "Value-Added creation",
+            "jobcoeff": "Wage-inducing effect",
+            "directemploycoeff": "Direct Employment effect"
         }
 
         with st.spinner("Calculating all hydrogen coefficient effects..."):
@@ -68,20 +68,19 @@ def show_hydrogen_analysis():
 
         # Display summary
         st.subheader("📊 Hydrogen Analysis Summary")
-        col1, col2, col3, col4 = st.columns(4)
+        col1, col2, col3 = st.columns(3)
 
         if all_results["productioncoeff"]:
             with col1:
                 st.metric("Hydrogen Scenario", selected_scenario)
             with col2:
-                st.metric("Demand Change", f"{demand_change:,.0f}")
+                st.metric("Demand Change (million won)", f"{demand_change:,.0f}")
             with col3:
                 st.metric("Analysis Types", len([r for r in all_results.values() if r is not None]))
-            with col4:
-                st.metric("Available Scenarios", len(scenarios))
+
 
         # Create tabs: Summary first, then each coefficient type
-        tab_names = ["📊 Summary"] + [f"{coeff_names[ct]} ({ct})" for ct in coefficient_types]
+        tab_names = ["📊 Summary"] + [f"{coeff_names[ct]}" for ct in coefficient_types]
         tabs = st.tabs(tab_names)
 
         # Summary tab (first tab)
@@ -123,12 +122,12 @@ def show_hydrogen_analysis():
                 col1, col2 = st.columns(2)
 
                 with col1:
-                    st.markdown("**💰 Economic Effects Summary**")
+                    st.markdown("**💰 Economic Effect Summary**")
                     economic_df = pd.DataFrame(economic_summary)
                     st.dataframe(economic_df, use_container_width=True)
 
                 with col2:
-                    st.markdown("**👥 Employment Effects Summary**")
+                    st.markdown("**👥 Employment Effect Summary**")
                     job_df = pd.DataFrame(job_summary)
                     st.dataframe(job_df, use_container_width=True)
 
@@ -259,7 +258,7 @@ def show_hydrogen_analysis():
                         st.markdown("**💰 Economic Effects**")
                         economic_df = pd.DataFrame(economic_chart_data)
                         st.caption("Total Economic Impact by Type")
-                        st.bar_chart(economic_df.set_index('Coefficient Type')['Total Impact'])
+                        st.bar_chart(economic_df.set_index('Coefficient Type')['Total Economic Impact'])
 
                         st.caption("Economic Sectors Affected")
                         st.bar_chart(economic_df.set_index('Coefficient Type')['Affected Sectors'])
@@ -279,7 +278,7 @@ def show_hydrogen_analysis():
                     economic_df = pd.DataFrame(economic_chart_data)
                     col1, col2 = st.columns(2)
                     with col1:
-                        st.bar_chart(economic_df.set_index('Coefficient Type')['Total Impact'])
+                        st.bar_chart(economic_df.set_index('Coefficient Type')['Total Economic Impact'])
                         st.caption("Total Economic Impact by Type")
                     with col2:
                         st.bar_chart(economic_df.set_index('Coefficient Type')['Affected Sectors'])

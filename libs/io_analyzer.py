@@ -2,7 +2,7 @@ import pandas as pd
 from typing import Dict
 
 class IOTableAnalyzer:
-    def __init__(self, data_file: str = '../data/iotable_2020.xlsx'):
+    def __init__(self, data_file: str = 'data/iotable_2020.xlsx'):
         """Initialize the I-O Table Analyzer with clean data structure."""
         self.data_file = data_file
         self.mapping = None
@@ -311,7 +311,7 @@ class IOTableAnalyzer:
         
         # Remove zero or near-zero impacts and NaN values
         significant_impacts = job_impacts[(abs(job_impacts) > 1e-6) & pd.notna(job_impacts)]
-        
+        #significant_impacts = job_impacts
         # Create results with sector names (using sub-sector mapping for job results)
         results = []
         for sector_code, impact in significant_impacts.items():

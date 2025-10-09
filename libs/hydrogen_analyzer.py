@@ -129,6 +129,9 @@ class HydrogenTableAnalyzer:
         # Sort by absolute impact (descending)
         results.sort(key=lambda x: abs(x['impact']), reverse=True)
 
+
+        total_economic_impact = 0
+        total_job_impact = 0
         # Calculate summary statistics
         if coeff_type == "directemploycoeff":
             total_job_impact = sum([r['impact'] for r in results])

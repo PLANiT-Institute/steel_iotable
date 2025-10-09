@@ -131,6 +131,12 @@ class ScenarioAnalyzer:
         if year not in self.results[effect_type]:
             self.results[effect_type][year] = {}
 
+        total_impact = 0 # 기본값 설정
+        if 'total_job_impact' in result and result['total_job_impact'] != 0:
+            total_impact = result['total_job_impact']
+        elif 'total_economic_impact' in result:
+            total_impact = result['total_economic_impact']
+
         scenario_key = f"scenario_{scenario_idx}"
         self.results[effect_type][year][scenario_key] = {
             'result': result,

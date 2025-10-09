@@ -813,7 +813,7 @@ def _display_effect_results(effect_type, results, scenario_analyzer, effect_desc
                         display_matrix.columns = [str(col) for col in display_matrix.columns]
 
                         st.markdown("#### Output Sector Impacts by Year (Million KRW)")
-                        st.dataframe(display_matrix, Use_container_width=True, height=400)
+                        st.dataframe(display_matrix, use_container_width=True, height=400)
 
                         # Add charts below the table
                         st.markdown("#### 📈 Trend Charts")
