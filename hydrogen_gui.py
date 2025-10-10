@@ -100,7 +100,7 @@ def show_hydrogen_analysis():
                     results = all_results[coeff_type]
                     economic_summary.append({
                         'Coefficient Type': f"{coeff_names[coeff_type]} ({coeff_type})",
-                        'Total Economic Impact (million won)': f"{results['total_economic_impact']:,.0f}",
+                        'Total Economic Impact (million won)': f"{results['total_impact']:,.0f}",
                         'Affected Sectors': results['num_affected_sectors'],
                         'Top Impact Sector': results['impacts'][0]['sector_name'] if results['impacts'] else 'None',
                         'Top Impact Value (million won)': f"{results['impacts'][0]['impact']:,.0f}" if results['impacts'] else '0'
@@ -111,7 +111,7 @@ def show_hydrogen_analysis():
                     results = all_results[coeff_type]
                     job_summary.append({
                         'Coefficient Type': f"{coeff_names[coeff_type]} ({coeff_type})",
-                        'Total Jobs (person/billion won)': f"{results['total_job_impact']:,.0f}",
+                        'Total Jobs (person/billion won)': f"{results['total_impact']:,.0f}",
                         'Affected Sectors': results['num_affected_sectors'],
                         'Top Impact Sector': results['impacts'][0]['sector_name'] if results['impacts'] else 'None',
                         'Top Impact Value': f"{results['impacts'][0]['impact']:,.0f}" if results['impacts'] else '0'
@@ -175,8 +175,8 @@ def show_hydrogen_analysis():
                                     ['Hydrogen Scenario', results['scenario'], ''],
                                     ['Demand Change', results['demand_change'], ''],
                                     ['Coefficient Type', f"{results['coeff_name']} ({coeff_type})", ''],
-                                    ['Total Economic Impact', results['total_economic_impact'], ''],
-                                    ['Total Job Impact', results['total_job_impact'], ''],
+                                    ['Total Economic Impact', results['total_impact'], ''],
+                                    ['Total Job Impact', results['total_impact'], ''],
                                     ['', '', ''],
                                     ['Sector Code', 'Sector Name', 'Impact']
                                 ], columns=['Sector Code', 'Sector Name', 'Impact'])
@@ -235,7 +235,7 @@ def show_hydrogen_analysis():
                     if all_results[coeff_type]:
                         economic_chart_data.append({
                             'Coefficient Type': coeff_names[coeff_type],
-                            'Total Economic Impact': all_results[coeff_type]['total_economic_impact'],
+                            'Total Economic Impact': all_results[coeff_type]['total_impact'],
                             'Affected Sectors': all_results[coeff_type]['num_affected_sectors']
                         })
 
@@ -245,7 +245,7 @@ def show_hydrogen_analysis():
                     if all_results[coeff_type]:
                         job_chart_data.append({
                             'Coefficient Type': coeff_names[coeff_type],
-                            'Total Jobs': all_results[coeff_type]['total_job_impact'],
+                            'Total Jobs': all_results[coeff_type]['total_impact'],
                             'Affected Sectors': all_results[coeff_type]['num_affected_sectors']
                         })
 
@@ -309,7 +309,7 @@ def show_hydrogen_analysis():
                 # Summary metrics for this coefficient type
                 col1, col2, col3 = st.columns(3)
                 with col1:
-                    st.metric("Total Economic Impact", f"{results['total_economic_impact']:,.0f}")
+                    st.metric("Total Economic Impact", f"{results['total_impact']:,.0f}")
                 with col2:
                     st.metric("Affected Sectors", results['num_affected_sectors'])
                 with col3:

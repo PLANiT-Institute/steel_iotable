@@ -129,7 +129,6 @@ class HydrogenTableAnalyzer:
         # Sort by absolute impact (descending)
         results.sort(key=lambda x: abs(x['impact']), reverse=True)
 
-        total_impact = 0
         # Calculate summary statistics
 
         total_impact = sum([r['impact'] for r in results])
