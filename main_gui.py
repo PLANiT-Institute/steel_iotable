@@ -560,10 +560,10 @@ def show_scenario_analysis():
             if available_hydrogen_effects or available_hydrogen_job_effects:
                 # Effect type descriptions for Hydrogen
                 hydrogen_effect_descriptions = {
-                    'inputcoeff_A': 'Input Coefficients',
-                    'valueaddedcoeff': 'Value Added Effects',
-                    'jobcoeff': 'Job Creation Effects (Hydrogen)',
-                    'directemploycoeff': 'Direct Employment Effects (Hydrogen)'
+                    'productioncoeff': 'Production-inducing effect',
+                    'valueaddedcoeff': 'Value Added Effect',
+                    'jobcoeff': 'Job Creation Effect',
+                    'directemploycoeff': 'Direct Employment Effect'
                 }
 
                 # Create tabs for Hydrogen effect types
