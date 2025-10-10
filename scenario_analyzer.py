@@ -70,6 +70,8 @@ class ScenarioAnalyzer:
             input_table = scenario_row['input']
             sector = scenario_row['sector']
 
+            print(idx)
+
             print(f"\nProcessing scenario {idx + 1}: {input_table} - {sector}")
 
             # Determine analyzer type based on input table
@@ -131,11 +133,12 @@ class ScenarioAnalyzer:
         if year not in self.results[effect_type]:
             self.results[effect_type][year] = {}
 
+        
         total_impact = 0 # 기본값 설정
-        if 'total_job_impact' in result and result['total_job_impact'] != 0:
-            total_impact = result['total_job_impact']
-        elif 'total_economic_impact' in result:
-            total_impact = result['total_economic_impact']
+        # if 'total_job_impact' in result and result['total_job_impact'] != 0:
+        #     total_impact = result['total_job_impact']
+        # elif 'total_economic_impact' in result:
+        #     total_impact = result['total_economic_impact']
 
         scenario_key = f"scenario_{scenario_idx}"
         self.results[effect_type][year][scenario_key] = {
@@ -144,6 +147,7 @@ class ScenarioAnalyzer:
             'total_impact': result['total_impact'],
             'num_affected_sectors': result['num_affected_sectors']
         }
+
 
     def _aggregate_results(self, year_columns: List[int], effect_types: List[str]):
         """Aggregate results across all scenarios for each year and effect type."""

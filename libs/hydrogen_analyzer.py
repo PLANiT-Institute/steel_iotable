@@ -129,14 +129,10 @@ class HydrogenTableAnalyzer:
         # Sort by absolute impact (descending)
         results.sort(key=lambda x: abs(x['impact']), reverse=True)
 
-
-        total_economic_impact = 0
-        total_job_impact = 0
+        total_impact = 0
         # Calculate summary statistics
-        if coeff_type == "directemploycoeff":
-            total_job_impact = sum([r['impact'] for r in results])
-        else:
-            total_economic_impact = sum([r['impact'] for r in results])
+
+        total_impact = sum([r['impact'] for r in results])
 
         return {
             'scenario': scenario,
@@ -144,8 +140,7 @@ class HydrogenTableAnalyzer:
             'coeff_type': coeff_type,
             'coeff_name': coeff_names[coeff_type],
             'impacts': results,
-            'total_job_impact': total_job_impact,
-            'total_economic_impact' : total_economic_impact,
+            'total_impact': total_impact,
             'num_affected_sectors': len(results)
         }
 
@@ -158,7 +153,7 @@ class HydrogenTableAnalyzer:
         print(f"Demand Change (million won): {results['demand_change']:,.0f}")
         print(f"Coefficient Type: {results['coeff_type']} ({results['coeff_name']})")
         print(f"Total Economic Impact (million won): {results['impacts'] == 'productioncoeff':,.2f}")
-        print(f"Total Job Impact (person/billion won): {results['total_job_impact']:,.2f}")
+        print(f"Total Job Impact (person/billion won): {results['total_impact']:,.2f}")
         print(f"Affected Sectors: {results['num_affected_sectors']}")
 
         print(f"\n{'Top 20 Impacts:':<60}")

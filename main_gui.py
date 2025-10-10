@@ -699,18 +699,28 @@ def _display_effect_results(effect_type, results, scenario_analyzer, effect_desc
 
             # Get years with data for this input sector
             available_years = []
+
             for year in individual_results.keys():
                 for scenario_idx, scenario_data in individual_results[year].items():
                     # Check if this scenario matches our input sector
                     scenario_idx_num = int(scenario_idx.split('_')[1])
+                    
                     scenario_row = scenario_analyzer.scenarios_data.iloc[scenario_idx_num]
+
+                    print(scenario_row)
 
                     if (str(scenario_row['sector']) == sector_info['sector'] and
                         scenario_row['input'] == sector_info['input_table']):
                         available_years.append(year)
                         break
 
+            #print("Before sorting: ")
+            #print(available_years)
+
             available_years = sorted(set(available_years))
+
+            #print("After sorting: ")
+            #print(available_years)
 
             if not available_years:
                 st.info(f"No data available for {sector_info['sector']}")
