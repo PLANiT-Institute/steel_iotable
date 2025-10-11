@@ -232,8 +232,8 @@ class IOTableAnalyzer:
         direct_impacts = selected_coeffs[final_target_sector] * demand_change
         
         # Remove zero or near-zero impacts and NaN values
-        significant_impacts = direct_impacts[(abs(direct_impacts) > 1e-6) & pd.notna(direct_impacts)]
-        #significant_impacts = direct_impacts
+        #significant_impacts = direct_impacts[(abs(direct_impacts) > 1e-6) & pd.notna(direct_impacts)]
+        significant_impacts = direct_impacts
         # Create results with sector names
         results = []
         for sector_code, impact in significant_impacts.items():
@@ -310,8 +310,8 @@ class IOTableAnalyzer:
         job_impacts = selected_coeffs[subsector_code] * demand_change/1000
         
         # Remove zero or near-zero impacts and NaN values
-        significant_impacts = job_impacts[(abs(job_impacts) > 1e-6) & pd.notna(job_impacts)]
-        #significant_impacts = job_impacts
+        #significant_impacts = job_impacts[(abs(job_impacts) > 1e-6) & pd.notna(job_impacts)]
+        significant_impacts = job_impacts
         # Create results with sector names (using sub-sector mapping for job results)
         results = []
         for sector_code, impact in significant_impacts.items():

@@ -114,8 +114,8 @@ class HydrogenTableAnalyzer:
             direct_impacts = selected_coeffs[scenario] * demand_change
 
         # Remove zero or near-zero impacts and NaN values
-        significant_impacts = direct_impacts[(abs(direct_impacts) > 1e-6) & pd.notna(direct_impacts)]
-
+        #significant_impacts = direct_impacts[(abs(direct_impacts) > 1e-6) & pd.notna(direct_impacts)]
+        significant_impacts = direct_impacts
         # Create results with sector names
         results = []
         for sector_code, impact in significant_impacts.items():
