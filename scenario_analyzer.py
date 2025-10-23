@@ -254,6 +254,13 @@ class ScenarioAnalyzer:
                 for sector_code in sorted(all_sectors):
                     row = {'Sector_Code': sector_code, 'Sector_Name': ''}
 
+                    # Add code_h and product_h columns if IO analyzer is available and this is not a job coefficient
+                    if self.io_analyzer and effect_type not in ['jobcoeff', 'directemploycoeff']:
+                        code_h = self.io_analyzer.basic_to_code_h.get(sector_code, '')
+                        product_h = self.io_analyzer.code_h_to_product_h.get(code_h, '') if code_h else ''
+                        row['Code_H'] = code_h
+                        row['Category_H'] = product_h
+
                     for year in all_years:
                         year_data = self.aggregated_results[effect_type][year]
                         impact_value = 0
@@ -272,6 +279,12 @@ class ScenarioAnalyzer:
                     sector_matrix.append(row)
 
                 sector_df = pd.DataFrame(sector_matrix)
+
+                # Reorder columns to have Code_H and Category_H after Sector_Name
+                if self.io_analyzer and effect_type not in ['jobcoeff', 'directemploycoeff']:
+                    cols = ['Sector_Code', 'Sector_Name', 'Code_H', 'Category_H'] + [col for col in sector_df.columns if col.startswith('Year_')]
+                    sector_df = sector_df[cols]
+
                 sector_df.to_excel(writer, sheet_name='Sector_Impacts_by_Year', index=False)
 
             print(f"Created {filename}")

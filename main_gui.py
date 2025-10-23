@@ -201,22 +201,45 @@ def show_io_analysis():
                             if all_results[coeff_type] and all_results[coeff_type]['impacts']:
                                 results = all_results[coeff_type]
                                 df = pd.DataFrame(results['impacts'])
-                                df = df[['sector_code', 'sector_name', 'impact']]
-                                df.columns = ['Sector Code', 'Sector Name', 'Impact']
+
+                                # Add code_h and product_h columns for non-job coefficients
+                                if coeff_type not in ['jobcoeff', 'directemploycoeff']:
+                                    # Map sector codes to code_h and product_h
+                                    df['code_h'] = df['sector_code'].map(analyzer.basic_to_code_h)
+                                    df['product_h'] = df['code_h'].map(analyzer.code_h_to_product_h)
+                                    df = df[['sector_code', 'sector_name', 'code_h', 'product_h', 'impact']]
+                                    df.columns = ['Sector Code', 'Sector Name', 'Code_H', 'Category_H', 'Impact']
+                                else:
+                                    # For job coefficients, keep original structure
+                                    df = df[['sector_code', 'sector_name', 'impact']]
+                                    df.columns = ['Sector Code', 'Sector Name', 'Impact']
+
                                 df = df.sort_values('Impact', key=lambda x: abs(x), ascending=False)
-                                
+
                                 # Add metadata as first rows
-                                metadata = pd.DataFrame([
-                                    ['Analysis Details', '', ''],
-                                    ['Target Sector', results['target_sector'], ''],
-                                    ['Target Product', results['target_product'], ''],
-                                    ['Demand Change', results['demand_change'], ''],
-                                    ['Coefficient Type', f"{results['coeff_name']} ({coeff_type})", ''],
-                                    ['Indirect Production Impact', all_results['indirect_prod']['impact'] if 'indirect_prod' in all_results and 'impact' in all_results['indirect_prod'] else '', ''],
-                                    ['', '', ''],
-                                    ['Sector Code', 'Sector Name', 'Impact']
-                                ], columns=['Sector Code', 'Sector Name', 'Impact'])
-                                
+                                if coeff_type not in ['jobcoeff', 'directemploycoeff']:
+                                    metadata = pd.DataFrame([
+                                        ['Analysis Details', '', '', '', ''],
+                                        ['Target Sector', results['target_sector'], '', '', ''],
+                                        ['Target Product', results['target_product'], '', '', ''],
+                                        ['Demand Change', results['demand_change'], '', '', ''],
+                                        ['Coefficient Type', f"{results['coeff_name']} ({coeff_type})", '', '', ''],
+                                        ['Total Impact', results['total_impact'], '', '', ''],
+                                        ['', '', '', '', ''],
+                                        ['Sector Code', 'Sector Name', 'Code_H', 'Category_H', 'Impact']
+                                    ], columns=['Sector Code', 'Sector Name', 'Code_H', 'Category_H', 'Impact'])
+                                else:
+                                    metadata = pd.DataFrame([
+                                        ['Analysis Details', '', ''],
+                                        ['Target Sector', results['target_sector'], ''],
+                                        ['Target Product', results['target_product'], ''],
+                                        ['Demand Change', results['demand_change'], ''],
+                                        ['Coefficient Type', f"{results['coeff_name']} ({coeff_type})", ''],
+                                        ['Total Impact', results['total_impact'], ''],
+                                        ['', '', ''],
+                                        ['Sector Code', 'Sector Name', 'Impact']
+                                    ], columns=['Sector Code', 'Sector Name', 'Impact'])
+
                                 final_df = pd.concat([metadata, df], ignore_index=True)
                                 sheet_name = coeff_names[coeff_type][:30]  # Excel sheet name limit
                                 final_df.to_excel(writer, sheet_name=sheet_name, index=False, header=False)
@@ -466,6 +489,7 @@ def show_scenario_analysis():
         # Define all effect types to analyze
         all_effect_types = [
             #'inputcoeff_A',        # Input coefficients (hydrogen)
+            'productioncoeff',        # Indirect production (hydrogen)
             'valueaddedcoeff',     # Value added (hydrogen)
             #'A',                   # Direct total (IO)
             #'Am',                  # Direct import (IO)

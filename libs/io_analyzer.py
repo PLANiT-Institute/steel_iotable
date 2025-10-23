@@ -10,6 +10,7 @@ class IOTableAnalyzer:
         self.subsectormap = None
         self.coefficients = {}  # Will store A, Am, Ad, job coefficients
         self.basic_to_subsector = {}  # Mapping from basic sector to sub-sector
+        self.basic_to_subsector_to_code_h = {} #added
         self.subsector_to_name = {}  # Mapping from sub-sector code to name
         self.load_data()
     
@@ -128,14 +129,36 @@ class IOTableAnalyzer:
         
         print(f"Created sub-sector-to-name mapping for {len(self.subsector_to_name)} sub-sectors")
         
+        # Create code_h to product_h mapping
+        self.code_h_to_product_h = {}
+        self.code_h_to_product_h = pd.Series(self.codemap['product_h'].values, index=self.codemap['code_h']).to_dict()
+        print(f"Created code_h_to_product_h mapping with {len(self.code_h_to_product_h)} entries.")
+
+        # Create basic code to code_h mapping
+        self.basic_to_code_h = {}
+        for _, row in self.codemap.iterrows():
+            basic_code = format_code(row['Basic'])
+            code_h_value = row['code_h']
+            self.basic_to_code_h[basic_code] = code_h_value
+        print(f"Created basic_to_code_h mapping with {len(self.basic_to_code_h)} entries.")
+
+        # Create display options for code_h
+        unique_code_h = self.codemap[['code_h', 'product_h']].drop_duplicates()
+        self.code_h_options = {row['code_h']: f"{row['code_h']}: {row['product_h']}"
+                               for _, row in unique_code_h.iterrows()}
+        print(f"Created code_h display options with {len(self.code_h_options)} entries.")
+
         # Create basic-to-subsector mapping
         for _, row in self.codemap.iterrows():
             basic_code = format_code(row['Basic']) # 4자리 형식 적용
             subsector_code = format_subsector_code(row['Sub-sector']) # 3자리 형식 적용
+            code_h_value = row['code_h']
             self.basic_to_subsector[basic_code] = subsector_code
+            self.basic_to_subsector_to_code_h.setdefault(basic_code, {})[subsector_code] = code_h_value
         
         print(f"Created basic-to-subsector mapping for {len(self.basic_to_subsector)} sectors")
-        
+        print(f"Created basic-to-subsector-to-code_h mapping for {len(self.basic_to_subsector_to_code_h)} basic sectors")
+
         # Create code-to-product mapping dictionary with proper string formatting
         self.code_to_product = {}
         self.code_to_product_display = {}  # For display purposes
@@ -143,12 +166,10 @@ class IOTableAnalyzer:
         # Use first coefficient matrix to check column format
         sample_coeffs = self.coefficients['indirect_prod']
         
-
         self.code_to_product = pd.Series(self.mapping['product'].values, index=self.mapping['code']).to_dict()
         self.code_to_product_display = {code: f"{code}: {product}" for code, product in self.code_to_product.items()}
         print(f"Created code_to_product mapping with {len(self.code_to_product)} entries.")
 
-        
         print(f"Final code_to_product mapping size: {len(self.code_to_product)}")
         if len(self.code_to_product) != 380 and len(self.code_to_product_display) != 411:
             print("WARNING: Mapping dictionary size is not 380!")
@@ -160,9 +181,20 @@ class IOTableAnalyzer:
 
         #print("Data loading complete!")
     
-    def get_sector_options(self) -> Dict:
-        """Return all available sector codes and their products for display."""
-        return self.code_to_product_display
+    def get_sector_options(self, level: str = 'basic') -> Dict:
+        """
+        Return available sector codes and their products for display.
+
+        Args:
+            level: 'basic' for basic sector codes, 'code_h' for high-level categories
+
+        Returns:
+            Dictionary mapping codes to display strings
+        """
+        if level == 'code_h':
+            return self.code_h_options
+        else:
+            return self.code_to_product_display
     
     def get_sector_from_display(self, display_string: str):
         return display_string.split(":")[0]
@@ -346,8 +378,106 @@ class IOTableAnalyzer:
             'num_affected_sectors': len(results)
         }
 
+    def aggregate_to_code_h(self, results: Dict) -> Dict:
+        """
+        Aggregate basic sector results to code_h level.
+
+        Args:
+            results: Dictionary from calculate_direct_effects
+
+        Returns:
+            Dictionary with aggregated results by code_h
+        """
+        code_h_impacts = {}
+
+        for impact in results['impacts']:
+            sector_code = impact['sector_code']
+            impact_value = impact['impact']
+
+            # Get code_h for this basic sector
+            if sector_code in self.basic_to_code_h:
+                code_h = self.basic_to_code_h[sector_code]
+                product_h = self.code_h_to_product_h.get(code_h, f"Category {code_h}")
+
+                if code_h not in code_h_impacts:
+                    code_h_impacts[code_h] = {
+                        'code_h': code_h,
+                        'product_h': product_h,
+                        'impact': 0,
+                        'sector_count': 0
+                    }
+
+                code_h_impacts[code_h]['impact'] += impact_value
+                code_h_impacts[code_h]['sector_count'] += 1
+
+        # Convert to list and sort
+        aggregated_results = list(code_h_impacts.values())
+        aggregated_results.sort(key=lambda x: abs(x['impact']), reverse=True)
+
+        total_impact = sum([r['impact'] for r in aggregated_results])
+
+        return {
+            'target_sector': results['target_sector'],
+            'target_product': results['target_product'],
+            'demand_change': results['demand_change'],
+            'coeff_type': results['coeff_type'],
+            'coeff_name': results['coeff_name'],
+            'aggregation_level': 'code_h',
+            'impacts': aggregated_results,
+            'total_impact': total_impact,
+            'num_affected_categories': len(aggregated_results)
+        }
+
+    def calculate_effects_by_code_h(self, target_sector, demand_change: float, coeff_type: str = 'indirect_prod', quiet: bool = False) -> Dict:
+        """
+        Calculate effects and automatically aggregate to code_h level.
+
+        Args:
+            target_sector: Sector code (string like "0111" or integer like 2711)
+            demand_change: Change in final demand (positive or negative)
+            coeff_type: Type of coefficients to use
+            quiet: If True, suppress print output
+
+        Returns:
+            Dictionary with code_h aggregated results
+        """
+        # First calculate at basic sector level
+        basic_results = self.calculate_direct_effects(target_sector, demand_change, coeff_type, quiet=quiet)
+
+        # Then aggregate to code_h level
+        return self.aggregate_to_code_h(basic_results)
+
+    def display_code_h_results(self, results: Dict):
+        """Display code_h aggregated analysis results."""
+        print(f"\n{'='*70}")
+        print(f"CODE_H AGGREGATED EFFECTS - {results['coeff_name'].upper()}")
+        print(f"{'='*70}")
+        print(f"Target Sector: {results['target_sector']} - {results['target_product']}")
+        print(f"Demand Change: {results['demand_change']:,.0f}")
+        print(f"Coefficient Type: {results['coeff_type']} ({results['coeff_name']})")
+        print(f"Total Impact: {results['total_impact']:,.2f}")
+        print(f"Affected Categories: {results['num_affected_categories']}")
+
+        print(f"\n{'All Categories:':<70}")
+        print(f"{'Code_H':<8} {'Category':<30} {'Sectors':>10} {'Impact':>18}")
+        print("-" * 70)
+
+        for impact in results['impacts']:
+            print(f"{impact['code_h']:<8} {impact['product_h']:<30} {impact['sector_count']:>10} {impact['impact']:>18,.2f}")
+
 if __name__ == "__main__":
     analyzer = IOTableAnalyzer()
 
-    results = analyzer.calculate_direct_effects("1610", 345000, 'indirect_prod')
-    analyzer.display_results(results)
+    # Basic sector level analysis
+    print("\n" + "="*70)
+    print("BASIC SECTOR LEVEL ANALYSIS")
+    print("="*70)
+    results_basic = analyzer.calculate_direct_effects("1610", 345000, 'indirect_prod')
+    analyzer.display_results(results_basic)
+
+    # code_h aggregated analysis
+    print("\n" + "="*70)
+    print("CODE_H AGGREGATED ANALYSIS")
+    print("="*70)
+    results_code_h = analyzer.calculate_effects_by_code_h("1610", 345000, 'indirect_prod')
+    analyzer.display_code_h_results(results_code_h)
