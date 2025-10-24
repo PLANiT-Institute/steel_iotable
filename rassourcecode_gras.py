@@ -84,13 +84,13 @@ class RASAnalyzer:
         #v_1 = (df_target_year[col_total_demand] - df_target_year[col_value_added]).values.astype(float)
 
         # 음수 처리 (오류 가능성 1st priority)
-        #u_1[u_1 < 0] = 0
-        #v_1[v_1 < 0] = 0
+        u_1[u_1 < 0] = 0
+        v_1[v_1 < 0] = 0
 
         print(f"Prepared inputs: A_0 shape {A_0.shape}, u_1 len {len(u_1)}, v_1 len {len(v_1)}")
         return A_0, u_1, v_1
 
-    def ras_algorithm(self, A_0, u_1, v_1, tolerance=1e-6, max_iterations=50000):
+    def ras_algorithm(self, A_0, u_1, v_1, tolerance=1e-6, max_iterations=10000):
         """RAS 알고리즘 (기존 함수와 동일, 클래스 메소드로 편입)"""
         A = A_0.copy()
         A[A == 0] = 1e-10
@@ -117,7 +117,7 @@ class RASAnalyzer:
         else:
             print(f"Warning: RAS did not converge after {max_iterations} iterations. Total error: {total_error}")
 
-        #print(sum(u_1), sum(v_1))
+        print(sum(u_1), sum(v_1))
         return A
 
     def run_analysis_for_year(self, target_year):
@@ -134,7 +134,7 @@ if __name__ == "__main__":
     BASIC_FILE = 'data/iotableforcasting_v3.xlsx' # 파일 경로 확인 필요
     TARGET_FILE = 'data/iotableforcasting_v3.xlsx' # 파일 경로 확인 필요
     TARGET_YEARS = [2025, 2030, 2040] # 분석할 연도 목록
-    OUTPUT_FILE = "ras_estimated_matrix_v50000.xlsx"
+    OUTPUT_FILE = "ras_estimated_matrix_v2.xlsx"
 
     try:
         # 1. 분석기 객체 생성 (데이터 로딩 포함)
