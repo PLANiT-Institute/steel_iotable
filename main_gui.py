@@ -1,6 +1,10 @@
 from re import U
 import streamlit as st
 import pandas as pd
+import plotly.express as px
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
+from pathlib import Path
 from libs.io_analyzer import IOTableAnalyzer
 from hydrogen_gui import show_hydrogen_analysis
 from scenario_analyzer import ScenarioAnalyzer
@@ -22,7 +26,7 @@ def main():
     st.sidebar.title("Analysis Selection")
     analysis_type = st.sidebar.radio(
         "Choose Analysis Type:",
-        ["I-O Table Analysis", "Hydrogen Table Analysis", "Scenario Batch Analysis"],
+        ["I-O Table Analysis", "Hydrogen Table Analysis", "Scenario Batch Analysis", "📊 Summary Visualizations"],
         index=0
     )
 
@@ -30,8 +34,10 @@ def main():
         show_io_analysis()
     elif analysis_type == "Hydrogen Table Analysis":
         show_hydrogen_analysis()
-    else:  # Scenario Batch Analysis
+    elif analysis_type == "Scenario Batch Analysis":
         show_scenario_analysis()
+    else:  # Summary Visualizations
+        show_summary_visualizations()
 
 def show_io_analysis():
     st.title("🏭 Steel-Coal I-O Table Direct Effects Analyzer")
@@ -202,43 +208,37 @@ def show_io_analysis():
                                 results = all_results[coeff_type]
                                 df = pd.DataFrame(results['impacts'])
 
-                                # Add code_h and product_h columns for non-job coefficients
-                                if coeff_type not in ['jobcoeff', 'directemploycoeff']:
-                                    # Map sector codes to code_h and product_h
+                                # Add code_h and product_h columns for all coefficient types
+                                # Map sector codes to code_h and product_h
+                                if hasattr(analyzer, 'basic_to_code_h') and hasattr(analyzer, 'code_h_to_product_h'):
                                     df['code_h'] = df['sector_code'].map(analyzer.basic_to_code_h)
                                     df['product_h'] = df['code_h'].map(analyzer.code_h_to_product_h)
+                                else:
+                                    df['code_h'] = ''
+                                    df['product_h'] = ''
+
+                                # Structure columns based on coefficient type
+                                if coeff_type not in ['jobcoeff', 'directemploycoeff']:
                                     df = df[['sector_code', 'sector_name', 'code_h', 'product_h', 'impact']]
                                     df.columns = ['Sector Code', 'Sector Name', 'Code_H', 'Category_H', 'Impact']
                                 else:
-                                    # For job coefficients, keep original structure
-                                    df = df[['sector_code', 'sector_name', 'impact']]
-                                    df.columns = ['Sector Code', 'Sector Name', 'Impact']
+                                    # For job coefficients, also include code_h and product_h
+                                    df = df[['sector_code', 'sector_name', 'code_h', 'product_h', 'impact']]
+                                    df.columns = ['Sector Code', 'Sector Name', 'Code_H', 'Category_H', 'Impact']
 
                                 df = df.sort_values('Impact', key=lambda x: abs(x), ascending=False)
 
-                                # Add metadata as first rows
-                                if coeff_type not in ['jobcoeff', 'directemploycoeff']:
-                                    metadata = pd.DataFrame([
-                                        ['Analysis Details', '', '', '', ''],
-                                        ['Target Sector', results['target_sector'], '', '', ''],
-                                        ['Target Product', results['target_product'], '', '', ''],
-                                        ['Demand Change', results['demand_change'], '', '', ''],
-                                        ['Coefficient Type', f"{results['coeff_name']} ({coeff_type})", '', '', ''],
-                                        ['Total Impact', results['total_impact'], '', '', ''],
-                                        ['', '', '', '', ''],
-                                        ['Sector Code', 'Sector Name', 'Code_H', 'Category_H', 'Impact']
-                                    ], columns=['Sector Code', 'Sector Name', 'Code_H', 'Category_H', 'Impact'])
-                                else:
-                                    metadata = pd.DataFrame([
-                                        ['Analysis Details', '', ''],
-                                        ['Target Sector', results['target_sector'], ''],
-                                        ['Target Product', results['target_product'], ''],
-                                        ['Demand Change', results['demand_change'], ''],
-                                        ['Coefficient Type', f"{results['coeff_name']} ({coeff_type})", ''],
-                                        ['Total Impact', results['total_impact'], ''],
-                                        ['', '', ''],
-                                        ['Sector Code', 'Sector Name', 'Impact']
-                                    ], columns=['Sector Code', 'Sector Name', 'Impact'])
+                                # Add metadata as first rows (all types now have 5 columns)
+                                metadata = pd.DataFrame([
+                                    ['Analysis Details', '', '', '', ''],
+                                    ['Target Sector', results['target_sector'], '', '', ''],
+                                    ['Target Product', results['target_product'], '', '', ''],
+                                    ['Demand Change', results['demand_change'], '', '', ''],
+                                    ['Coefficient Type', f"{results['coeff_name']} ({coeff_type})", '', '', ''],
+                                    ['Total Impact', results['total_impact'], '', '', ''],
+                                    ['', '', '', '', ''],
+                                    ['Sector Code', 'Sector Name', 'Code_H', 'Category_H', 'Impact']
+                                ], columns=['Sector Code', 'Sector Name', 'Code_H', 'Category_H', 'Impact'])
 
                                 final_df = pd.concat([metadata, df], ignore_index=True)
                                 sheet_name = coeff_names[coeff_type][:30]  # Excel sheet name limit
@@ -262,17 +262,24 @@ def show_io_analysis():
                         if all_results[coeff_type] and all_results[coeff_type]['impacts']:
                             results = all_results[coeff_type]
                             for impact in results['impacts']:
+                                # Get code_h and product_h if available
+                                sector_code = impact['sector_code']
+                                code_h = analyzer.basic_to_code_h.get(sector_code, '') if hasattr(analyzer, 'basic_to_code_h') else ''
+                                product_h = analyzer.code_h_to_product_h.get(code_h, '') if code_h and hasattr(analyzer, 'code_h_to_product_h') else ''
+
                                 combined_data.append({
                                     'coefficient_type': coeff_type,
                                     'coefficient_name': coeff_names[coeff_type],
-                                    'sector_code': impact['sector_code'],
+                                    'sector_code': sector_code,
                                     'sector_name': impact['sector_name'],
+                                    'code_h': code_h,
+                                    'product_h': product_h,
                                     'impact': impact['impact']
                                 })
-                    
+
                     if combined_data:
                         combined_df = pd.DataFrame(combined_data)
-                        csv_data = combined_df.to_csv(index=False)
+                        csv_data = combined_df.to_csv(index=False, encoding='utf-8-sig')
                         st.download_button(
                             label="📊 Download Complete Analysis (CSV)",
                             data=csv_data,
@@ -394,9 +401,19 @@ def show_io_analysis():
                         width=600,
                         height=600
                     )
-                    
+
+                    # Add code_h and product_h columns to the DataFrame before download/export
+                    # If these columns don't already exist, map them from the sector_code as needed.
+                    if 'code_h' not in df.columns or 'product_h' not in df.columns:
+                        # Create mappings via analyzer if needed
+                        if hasattr(analyzer, "basic_to_code_h") and hasattr(analyzer, "code_h_to_product_h"):
+                            df['code_h'] = df['sector_code'].map(analyzer.basic_to_code_h)
+                            df['product_h'] = df['code_h'].map(analyzer.code_h_to_product_h)
+                        else:
+                            df['code_h'] = ""
+                            df['product_h'] = ""
                     # Download button
-                    csv_data = df[['sector_code', 'sector_name', 'impact']].to_csv(index=False)
+                    csv_data = df[['sector_code', 'sector_name', 'code_h', 'product_h', 'impact']].to_csv(index=False, encoding='utf-8-sig')
                     st.download_button(
                         label=f"📥 Download {coeff_names[coeff_type]} Results",
                         data=csv_data,
@@ -506,11 +523,14 @@ def show_scenario_analysis():
                 # Run the analysis for all effect types
                 scenario_analyzer.run_all_scenarios(effect_types=all_effect_types)
 
+                # Automatically save individual scenario CSV files to output folder
+                scenario_analyzer.save_individual_scenario_csvs(output_dir='output')
+
                 # Store results in session state
                 st.session_state.scenario_results = scenario_analyzer.aggregated_results
                 st.session_state.scenario_analyzer = scenario_analyzer
 
-                st.success("✅ Complete scenario analysis finished!")
+                st.success("✅ Complete scenario analysis finished! CSV files saved to output folder.")
 
             except Exception as e:
                 st.error(f"❌ Error during analysis: {str(e)}")
@@ -619,17 +639,21 @@ def show_scenario_analysis():
             with col1:
                 # Generate Excel files button
                 if st.button("📊 Generate Excel Reports"):
-                    with st.spinner("Generating Excel reports..."):
+                    with st.spinner("Generating Excel reports and CSV files..."):
                         try:
                             scenario_analyzer.create_summary_tables(output_dir='output')
-                            st.success("✅ Excel reports generated in 'output/' directory!")
+                            scenario_analyzer.save_individual_scenario_csvs(output_dir='output')
+                            st.success("✅ Excel reports and CSV files generated in 'output/' directory!")
 
                             # List generated files
                             import os
                             if os.path.exists('output'):
-                                files = [f for f in os.listdir('output') if f.endswith('.xlsx')]
-                                if files:
-                                    st.info(f"Generated files: {', '.join(files)}")
+                                xlsx_files = [f for f in os.listdir('output') if f.endswith('.xlsx')]
+                                csv_files = [f for f in os.listdir('output') if f.startswith('scenario_') and f.endswith('.csv')]
+                                if xlsx_files:
+                                    st.info(f"Generated Excel files: {len(xlsx_files)} files")
+                                if csv_files:
+                                    st.info(f"Generated CSV files: {len(csv_files)} files")
 
                         except Exception as e:
                             st.error(f"❌ Error generating reports: {str(e)}")
@@ -659,7 +683,7 @@ def show_scenario_analysis():
 
                     if combined_data:
                         combined_df = pd.DataFrame(combined_data)
-                        csv_data = combined_df.to_csv(index=False)
+                        csv_data = combined_df.to_csv(index=False, encoding='utf-8-sig')
 
                         st.download_button(
                             label="📊 Download Complete Analysis (CSV)",
@@ -885,7 +909,7 @@ def _display_effect_results(effect_type, results, scenario_analyzer, effect_desc
                             st.line_chart(total_df, height=300)
 
                         # Download button for this specific input sector
-                        csv_data = matrix_df.to_csv(index=False)
+                        csv_data = matrix_df.to_csv(index=False, encoding='utf-8-sig')
                         st.download_button(
                             label=f"📥 Download {sector_info['sector']} Results",
                             data=csv_data,

@@ -2,7 +2,7 @@ import pandas as pd
 from typing import Dict
 
 class IOTableAnalyzer:
-    def __init__(self, data_file: str = 'data/iotable_2020.xlsx'):
+    def __init__(self, data_file: str = 'data/iotable_2023.xlsx'):
         """Initialize the I-O Table Analyzer with clean data structure."""
         self.data_file = data_file
         self.mapping = None

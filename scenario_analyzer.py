@@ -7,7 +7,7 @@ from libs.hydrogen_analyzer import HydrogenTableAnalyzer
 from libs.io_analyzer import IOTableAnalyzer
 
 class ScenarioAnalyzer:
-    def __init__(self, scenarios_file: str = 'data/scenarios.xlsx'):
+    def __init__(self, scenarios_file: str = 'data/scenarios_3.xlsx'):
         """Initialize the Scenario Analyzer with scenarios data."""
         self.scenarios_file = scenarios_file
         self.scenarios_data = None
@@ -288,6 +288,101 @@ class ScenarioAnalyzer:
                 sector_df.to_excel(writer, sheet_name='Sector_Impacts_by_Year', index=False)
 
             print(f"Created {filename}")
+
+    def save_individual_scenario_csvs(self, output_dir: str = 'output'):
+        """
+        Save individual CSV files for each scenario (input table + sector combination).
+        Files are named: scenario_{effect_type}_{sector}_{input_table}.csv
+        """
+        import os
+        os.makedirs(output_dir, exist_ok=True)
+
+        print(f"Saving individual scenario CSV files to {output_dir}/...")
+
+        # Group results by (effect_type, input_table, sector)
+        scenario_data_map = {}
+
+        for effect_type in self.results.keys():
+            if not self.results[effect_type]:
+                continue
+
+            for year in self.results[effect_type].keys():
+                for scenario_key, scenario_result in self.results[effect_type][year].items():
+                    # Extract scenario index from scenario_key (e.g., "scenario_0" -> 0)
+                    scenario_idx = int(scenario_key.split('_')[1])
+
+                    # Get scenario metadata from scenarios_data
+                    scenario_row = self.scenarios_data.iloc[scenario_idx]
+                    input_table = scenario_row['input']
+                    sector = str(scenario_row['sector'])
+
+                    # Create unique key for this scenario
+                    unique_key = (effect_type, sector, input_table)
+
+                    if unique_key not in scenario_data_map:
+                        scenario_data_map[unique_key] = {}
+
+                    # Store results for this year
+                    scenario_data_map[unique_key][year] = scenario_result['result']
+
+        # Now create CSV files for each unique scenario
+        for (effect_type, sector, input_table), year_results in scenario_data_map.items():
+            # Sort years
+            sorted_years = sorted(year_results.keys())
+
+            # Collect all unique output sectors across all years
+            all_output_sectors = {}
+            for year, result in year_results.items():
+                for impact in result['impacts']:
+                    sector_code = str(impact['sector_code'])
+                    sector_name = impact['sector_name']
+                    if sector_code not in all_output_sectors:
+                        all_output_sectors[sector_code] = sector_name
+
+            # Create matrix data (rows = output sectors, columns = years)
+            matrix_data = []
+            for sector_code, sector_name in all_output_sectors.items():
+                row = {
+                    'Sector_Code': sector_code,
+                    'Sector_Name': sector_name
+                }
+
+                # Add impact values for each year
+                for year in sorted_years:
+                    impact_value = 0.0
+                    result = year_results[year]
+
+                    for impact in result['impacts']:
+                        if str(impact['sector_code']) == sector_code:
+                            impact_value = impact['impact']
+                            break
+
+                    row[str(year)] = impact_value
+
+                matrix_data.append(row)
+
+            # Create DataFrame
+            if matrix_data:
+                df = pd.DataFrame(matrix_data)
+
+                # Sort by the latest year's absolute impact
+                latest_year_col = str(sorted_years[-1])
+                if latest_year_col in df.columns:
+                    df['abs_latest'] = df[latest_year_col].abs()
+                    df = df.sort_values('abs_latest', ascending=False)
+                    df = df.drop('abs_latest', axis=1)
+
+                # Clean up the input_table name for filename
+                input_table_clean = input_table.replace('.xlsx', '').replace(' ', '_')
+
+                # Create filename: scenario_{effect_type}_{sector}_{input_table}.csv
+                filename = f"{output_dir}/scenario_{effect_type}_{sector}_{input_table_clean}.csv"
+
+                # Save to CSV with UTF-8-BOM encoding for proper Korean character display in Excel
+                df.to_csv(filename, index=False, encoding='utf-8-sig')
+                print(f"Created {filename}")
+
+        print(f"Saved {len(scenario_data_map)} individual scenario CSV files.")
 
     def create_summary_charts(self, output_dir: str = 'output'):
         """Create summary charts showing aggregated effects by year and effect type."""
