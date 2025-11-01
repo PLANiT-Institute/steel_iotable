@@ -3,11 +3,11 @@ import numpy as np
 from typing import Dict, List, Any
 import matplotlib.pyplot as plt
 import seaborn as sns
-from libs.hydrogen_analyzer import HydrogenTableAnalyzer
-from libs.io_analyzer import IOTableAnalyzer
+from hydrogen_analyzer import HydrogenTableAnalyzer
+from io_analyzer import IOTableAnalyzer
 
 class ScenarioAnalyzer:
-    def __init__(self, scenarios_file: str = 'data/scenarios_3.xlsx'):
+    def __init__(self, scenarios_file: str = '../data/scenarios_1_2023.xlsx'):
         """Initialize the Scenario Analyzer with scenarios data."""
         self.scenarios_file = scenarios_file
         self.scenarios_data = None
@@ -52,7 +52,8 @@ class ScenarioAnalyzer:
                 'indirect_import',  # (for IO)
                 'jobcoeff',  # Job creation
                 'valueaddedcoeff',  # Value added (hydrogen)
-                'value_added'  # Value added (IO)
+                'value_added',  # Value added (IO)
+                'directemploycoeff' # Direct employment
             ]
 
         print(f"Running scenario analysis for effect types: {effect_types}")
@@ -384,211 +385,7 @@ class ScenarioAnalyzer:
 
         print(f"Saved {len(scenario_data_map)} individual scenario CSV files.")
 
-    def create_summary_charts(self, output_dir: str = 'output'):
-        """Create summary charts showing aggregated effects by year and effect type."""
-        import os
-        os.makedirs(output_dir, exist_ok=True)
-
-        print(f"Creating summary charts in {output_dir}/...")
-
-        # Set up the plotting style
-        plt.style.use('default')
-        sns.set_palette("husl")
-
-        # Create summary chart for total impacts by effect type and year
-        fig, axes = plt.subplots(2, 2, figsize=(16, 12))
-        fig.suptitle('Scenario Analysis Summary - Aggregated Effects by Year', fontsize=16, fontweight='bold')
-
-        # Chart 1: Total aggregate impact by year for each effect type
-        ax1 = axes[0, 0]
-        effect_types_with_data = []
-        years_list = []
-
-        for effect_type in self.aggregated_results.keys():
-            if not self.aggregated_results[effect_type]:
-                continue
-
-            years = sorted(self.aggregated_results[effect_type].keys())
-            totals = [self.aggregated_results[effect_type][year]['total_aggregate_impact'] for year in years]
-
-            ax1.plot(years, totals, marker='o', linewidth=2, label=effect_type)
-            effect_types_with_data.append(effect_type)
-            if not years_list:
-                years_list = years
-
-        ax1.set_title('Total Aggregate Impact by Year')
-        ax1.set_xlabel('Year')
-        ax1.set_ylabel('Total Impact (Million KRW)')
-        ax1.legend()
-        ax1.grid(True, alpha=0.3)
-
-        # Chart 2: Number of affected sectors by year
-        ax2 = axes[0, 1]
-        for effect_type in effect_types_with_data:
-            years = sorted(self.aggregated_results[effect_type].keys())
-            sector_counts = [self.aggregated_results[effect_type][year]['num_affected_sectors'] for year in years]
-            ax2.plot(years, sector_counts, marker='s', linewidth=2, label=effect_type)
-
-        ax2.set_title('Number of Affected Sectors by Year')
-        ax2.set_xlabel('Year')
-        ax2.set_ylabel('Number of Sectors')
-        ax2.legend()
-        ax2.grid(True, alpha=0.3)
-
-        # Chart 3: Average impact per scenario by year
-        ax3 = axes[1, 0]
-        for effect_type in effect_types_with_data:
-            years = sorted(self.aggregated_results[effect_type].keys())
-            avg_impacts = [self.aggregated_results[effect_type][year]['avg_aggregate_impact'] for year in years]
-            ax3.plot(years, avg_impacts, marker='^', linewidth=2, label=effect_type)
-
-        ax3.set_title('Average Impact per Scenario by Year')
-        ax3.set_xlabel('Year')
-        ax3.set_ylabel('Average Impact (Million KRW)')
-        ax3.legend()
-        ax3.grid(True, alpha=0.3)
-
-        # Chart 4: Heatmap of total impacts
-        ax4 = axes[1, 1]
-        if effect_types_with_data and years_list:
-            heatmap_data = []
-            heatmap_labels = []
-
-            for effect_type in effect_types_with_data:
-                row_data = []
-                for year in years_list:
-                    if year in self.aggregated_results[effect_type]:
-                        row_data.append(self.aggregated_results[effect_type][year]['total_aggregate_impact'])
-                    else:
-                        row_data.append(0)
-                heatmap_data.append(row_data)
-                heatmap_labels.append(effect_type)
-
-            sns.heatmap(heatmap_data,
-                       xticklabels=years_list,
-                       yticklabels=heatmap_labels,
-                       annot=True,
-                       fmt='.0f',
-                       cmap='RdYlBu_r',
-                       ax=ax4)
-            ax4.set_title('Impact Heatmap (Effect Type vs Year)')
-            ax4.set_xlabel('Year')
-            ax4.set_ylabel('Effect Type')
-
-        plt.tight_layout()
-        plt.savefig(f'{output_dir}/scenario_summary_charts.png', dpi=300, bbox_inches='tight')
-        plt.show()
-
-        # Create individual charts for each effect type
-        for effect_type in effect_types_with_data:
-            self._create_effect_type_chart(effect_type, output_dir)
-
-        print(f"Charts saved to {output_dir}/")
-
-    def _create_effect_type_chart(self, effect_type: str, output_dir: str):
-        """Create detailed chart for a specific effect type."""
-        if not self.aggregated_results[effect_type]:
-            return
-
-        fig, axes = plt.subplots(2, 2, figsize=(16, 12))
-        fig.suptitle(f'Detailed Analysis - {effect_type}', fontsize=16, fontweight='bold')
-
-        years = sorted(self.aggregated_results[effect_type].keys())
-
-        # Chart 1: Total impact trend
-        ax1 = axes[0, 0]
-        totals = [self.aggregated_results[effect_type][year]['total_aggregate_impact'] for year in years]
-        ax1.plot(years, totals, marker='o', linewidth=3, color='blue')
-        ax1.set_title('Total Aggregate Impact Over Time')
-        ax1.set_xlabel('Year')
-        ax1.set_ylabel('Total Impact (Million KRW)')
-        ax1.grid(True, alpha=0.3)
-
-        # Chart 2: Top sectors for the last year
-        ax2 = axes[0, 1]
-        if years:
-            last_year = years[-1]
-            top_sectors = self.aggregated_results[effect_type][last_year]['sector_impacts'][:10]
-
-            sector_names = [impact['sector_name'][:30] + '...' if len(impact['sector_name']) > 30
-                           else impact['sector_name'] for impact in top_sectors]
-            sector_impacts = [impact['total_impact'] for impact in top_sectors]
-
-            bars = ax2.barh(range(len(sector_names)), sector_impacts)
-            ax2.set_yticks(range(len(sector_names)))
-            ax2.set_yticklabels(sector_names)
-            ax2.set_title(f'Top 10 Affected Sectors ({last_year})')
-            ax2.set_xlabel('Total Impact (Million KRW)')
-
-            # Color bars based on impact (positive/negative)
-            for i, (bar, impact) in enumerate(zip(bars, sector_impacts)):
-                bar.set_color('green' if impact > 0 else 'red')
-
-        # Chart 3: Scenario count by year
-        ax3 = axes[1, 0]
-        scenario_counts = [self.aggregated_results[effect_type][year]['scenario_count'] for year in years]
-        ax3.bar(years, scenario_counts, alpha=0.7, color='orange')
-        ax3.set_title('Number of Scenarios by Year')
-        ax3.set_xlabel('Year')
-        ax3.set_ylabel('Number of Scenarios')
-        ax3.grid(True, alpha=0.3)
-
-        # Chart 4: Impact distribution (histogram for last year)
-        ax4 = axes[1, 1]
-        if years:
-            last_year = years[-1]
-            impacts = [impact['total_impact'] for impact in self.aggregated_results[effect_type][last_year]['sector_impacts']]
-            ax4.hist(impacts, bins=20, alpha=0.7, color='purple', edgecolor='black')
-            ax4.set_title(f'Impact Distribution ({last_year})')
-            ax4.set_xlabel('Total Impact (Million KRW)')
-            ax4.set_ylabel('Number of Sectors')
-            ax4.grid(True, alpha=0.3)
-
-        plt.tight_layout()
-        plt.savefig(f'{output_dir}/detailed_{effect_type}.png', dpi=300, bbox_inches='tight')
-        plt.show()
-
-    def display_summary(self, effect_type: str = None, year: int = None):
-        """Display summary results."""
-        if effect_type and year:
-            # Display specific effect type and year
-            if effect_type in self.aggregated_results and year in self.aggregated_results[effect_type]:
-                data = self.aggregated_results[effect_type][year]
-                print(f"\n{'='*60}")
-                print(f"SUMMARY: {effect_type.upper()} - YEAR {year}")
-                print(f"{'='*60}")
-                print(f"Total Aggregate Impact: {data['total_aggregate_impact']:,.2f} Million KRW")
-                print(f"Average Impact per Scenario: {data['avg_aggregate_impact']:,.2f} Million KRW")
-                print(f"Number of Scenarios: {data['scenario_count']}")
-                print(f"Affected Sectors: {data['num_affected_sectors']}")
-
-                print(f"\nTop 10 Affected Sectors:")
-                print(f"{'Code':<8} {'Sector':<40} {'Total Impact':>15} {'Avg Impact':>15}")
-                print("-" * 80)
-
-                for impact in data['sector_impacts'][:10]:
-                    print(f"{impact['sector_code']:<8} {impact['sector_name']:<40} "
-                          f"{impact['total_impact']:>15,.2f} {impact['avg_impact']:>15,.2f}")
-        else:
-            # Display overall summary
-            print(f"\n{'='*60}")
-            print(f"SCENARIO ANALYSIS OVERALL SUMMARY")
-            print(f"{'='*60}")
-            print(f"Effect Types Analyzed: {list(self.aggregated_results.keys())}")
-
-            for effect_type in self.aggregated_results.keys():
-                if not self.aggregated_results[effect_type]:
-                    continue
-
-                years = sorted(self.aggregated_results[effect_type].keys())
-                print(f"\n{effect_type}:")
-                print(f"  Years: {years}")
-                print(f"  Total Years: {len(years)}")
-
-                if years:
-                    last_year_data = self.aggregated_results[effect_type][years[-1]]
-                    print(f"  Latest Year ({years[-1]}) Total Impact: {last_year_data['total_aggregate_impact']:,.2f} Million KRW")
-
+    
     def integrate_sectors_1610_4506(self, effect_types: List[str] = None):
         """
         Integrate results from sectors 1610 and 4506 (IO Table) by summing impacts for each sector code.
@@ -786,12 +583,12 @@ class ScenarioAnalyzer:
         # Integrate 1610 + 4506
         integrated_io = self.integrate_sectors_1610_4506()
         if integrated_io:
-            self._save_integrated_csv(integrated_io, '1610_4506', 'iotable_2020', output_dir)
+            self._save_integrated_csv(integrated_io, '1610_4506', 'iotable_2023', output_dir)
 
         # Integrate H2S + H2T
         integrated_h2 = self.integrate_hydrogen_H2S_H2T()
         if integrated_h2:
-            self._save_integrated_csv(integrated_h2, 'H2S_H2T', 'hydrogentable_2020', output_dir)
+            self._save_integrated_csv(integrated_h2, 'H2S_H2T', 'hydrogentable_2023', output_dir)
 
         print("Integrated scenarios saved successfully!")
 
@@ -862,6 +659,321 @@ class ScenarioAnalyzer:
                 df.to_csv(filename, index=False, encoding='utf-8-sig')
                 print(f"Created {filename}")
 
+    def aggregate_integrated_by_code_h(self, integrated_results: Dict) -> Dict:
+        """
+        Aggregate integrated results by code_h category.
+
+        Args:
+            integrated_results: Dictionary from integrate_sectors_1610_4506() or integrate_hydrogen_H2S_H2T()
+
+        Returns:
+            Dictionary with code_h aggregated results for each effect type and year
+        """
+        if self.io_analyzer is None:
+            self.initialize_analyzers()
+
+        aggregated_results = {}
+
+        for effect_type, year_results in integrated_results.items():
+            if not year_results:
+                continue
+
+            aggregated_results[effect_type] = {}
+
+            for year, result in year_results.items():
+                # Aggregate by code_h
+                code_h_impacts = {}
+
+                for impact in result['impacts']:
+                    sector_code = str(impact['sector_code'])
+                    impact_value = impact['impact']
+
+                    # Get code_h for this sector
+                    if sector_code in self.io_analyzer.basic_to_code_h:
+                        code_h = self.io_analyzer.basic_to_code_h[sector_code]
+                        product_h = self.io_analyzer.code_h_to_product_h.get(code_h, f"Category {code_h}")
+
+                        if code_h not in code_h_impacts:
+                            code_h_impacts[code_h] = {
+                                'code_h': code_h,
+                                'product_h': product_h,
+                                'impact': 0,
+                                'sector_count': 0
+                            }
+
+                        code_h_impacts[code_h]['impact'] += impact_value
+                        code_h_impacts[code_h]['sector_count'] += 1
+
+                # Convert to list and sort
+                impacts_list = list(code_h_impacts.values())
+                impacts_list.sort(key=lambda x: abs(x['impact']), reverse=True)
+
+                # Calculate total impact
+                total_impact = sum([imp['impact'] for imp in impacts_list])
+
+                aggregated_results[effect_type][year] = {
+                    'impacts': impacts_list,
+                    'total_impact': total_impact,
+                    'num_affected_categories': len(impacts_list)
+                }
+
+        return aggregated_results
+
+    def save_integrated_code_h_results(self, output_dir: str = 'output'):
+        """
+        Save code_h aggregated integrated scenario results for both 1610+4506 and H2S+H2T.
+        Creates CSV files with code_h categories as rows and years as columns.
+        """
+        import os
+        os.makedirs(output_dir, exist_ok=True)
+
+        print(f"Saving code_h aggregated integrated results to {output_dir}/...")
+
+        # Process 1610 + 4506
+        print("\nProcessing 1610 + 4506 integration with code_h aggregation...")
+        integrated_io = self.integrate_sectors_1610_4506()
+        if integrated_io:
+            aggregated_io = self.aggregate_integrated_by_code_h(integrated_io)
+            self._save_code_h_csv(aggregated_io, '1610_4506', 'iotable_2023', output_dir)
+
+        # Process H2S + H2T
+        print("\nProcessing H2S + H2T integration with code_h aggregation...")
+        integrated_h2 = self.integrate_hydrogen_H2S_H2T()
+        if integrated_h2:
+            aggregated_h2 = self.aggregate_integrated_by_code_h(integrated_h2)
+            self._save_code_h_csv(aggregated_h2, 'H2S_H2T', 'hydrogentable_2023', output_dir)
+
+        print("\nCode_h aggregated integrated scenarios saved successfully!")
+
+    def _save_code_h_csv(self, aggregated_results: Dict, scenario_name: str,
+                         input_table: str, output_dir: str):
+        """
+        Helper function to save code_h aggregated results to CSV files.
+
+        Args:
+            aggregated_results: Dictionary from aggregate_integrated_by_code_h()
+            scenario_name: Name of the integrated scenario (e.g., '1610_4506' or 'H2S_H2T')
+            input_table: Input table name
+            output_dir: Output directory
+        """
+        for effect_type, year_results in aggregated_results.items():
+            if not year_results:
+                continue
+
+            # Sort years
+            sorted_years = sorted(year_results.keys())
+
+            # Collect all unique code_h categories across all years
+            all_code_h = {}
+            for year, result in year_results.items():
+                for impact in result['impacts']:
+                    code_h = impact['code_h']
+                    product_h = impact['product_h']
+                    if code_h not in all_code_h:
+                        all_code_h[code_h] = product_h
+
+            # Create matrix data (rows = code_h categories, columns = years)
+            matrix_data = []
+            for code_h, product_h in sorted(all_code_h.items()):
+                row = {
+                    'Code_H': code_h,
+                    'Category_H': product_h
+                }
+
+                # Add impact values for each year
+                for year in sorted_years:
+                    impact_value = 0.0
+                    result = year_results[year]
+
+                    for impact in result['impacts']:
+                        if impact['code_h'] == code_h:
+                            impact_value = impact['impact']
+                            break
+
+                    row[str(year)] = impact_value
+
+                matrix_data.append(row)
+
+            # Create DataFrame
+            if matrix_data:
+                df = pd.DataFrame(matrix_data)
+
+                # Sort by the latest year's absolute impact
+                latest_year_col = str(sorted_years[-1])
+                if latest_year_col in df.columns:
+                    df['abs_latest'] = df[latest_year_col].abs()
+                    df = df.sort_values('abs_latest', ascending=False)
+                    df = df.drop('abs_latest', axis=1)
+
+                # Create filename with code_h suffix
+                filename = f"{output_dir}/scenario_{effect_type}_{scenario_name}_{input_table}_code_h.csv"
+
+                # Save to CSV with UTF-8-BOM encoding
+                df.to_csv(filename, index=False, encoding='utf-8-sig')
+                print(f"Created {filename}")
+
+    def create_comprehensive_summary_tables(self, years: List[int] = None, output_dir: str = 'output'):
+        """
+        Create comprehensive summary tables for all scenarios (individual + integrated).
+        Creates 6 summary tables showing total impacts across all years:
+        1. Sector 1610 (IO Table)
+        2. Sector 4506 (IO Table)
+        3. H2S (Hydrogen)
+        4. H2T (Hydrogen)
+        5. Integrated 1610 & 4506
+        6. Integrated H2S & H2T
+
+        Args:
+            years: List of years to include (default: all available years from results)
+            output_dir: Directory to save the Excel file
+        """
+        import os
+        os.makedirs(output_dir, exist_ok=True)
+
+        # If no years specified, get all years from results
+        if years is None:
+            years_set = set()
+            for effect_type in self.results.keys():
+                years_set.update(self.results[effect_type].keys())
+            years = sorted(years_set)
+
+            if not years:
+                print("No results found. Please run run_all_scenarios() first.")
+                return {}
+
+            print(f"Using all available years: {years}")
+
+        print("Creating comprehensive summary tables...")
+        print("=" * 80)
+
+        summary_tables = {}
+
+        # Helper function to create summary from results dictionary
+        def create_summary_from_results(results_dict, effect_map, is_hydrogen=False):
+            """
+            Create summary table from a results dictionary.
+
+            Args:
+                results_dict: Dictionary with structure {effect_type: {year: {'total_impact': value}}}
+                effect_map: Mapping of effect types to use
+                is_hydrogen: Whether this is hydrogen data (affects units)
+            """
+            summary_rows = []
+
+            for year in years:
+                row = {'Year': year}
+
+                for effect_type, column_name in effect_map.items():
+                    if effect_type in results_dict and year in results_dict[effect_type]:
+                        total = results_dict[effect_type][year]['total_impact']
+
+                        # Convert to appropriate units
+                        if 'billion won' in column_name.lower():
+                            row[column_name] = total / 1000
+                        else:
+                            row[column_name] = total
+                    else:
+                        row[column_name] = 0 if 'N/A' not in column_name else 'N/A'
+
+                summary_rows.append(row)
+
+            return pd.DataFrame(summary_rows).set_index('Year')
+
+        # Find scenario indices
+        scenario_indices = {}
+        for idx, row in self.scenarios_data.iterrows():
+            sector = str(row['sector'])
+            if sector in ['1610', '4506', 'H2S', 'H2T']:
+                scenario_indices[sector] = idx
+
+        # Define effect type mappings
+        io_effect_map = {
+            'indirect_prod': 'Indirect Production (billion won)',
+            'indirect_import': 'Import (billion won)',
+            'value_added': 'Value Added (billion won)',
+            'jobcoeff': 'Job Creation (person/billion won)',
+            'directemploycoeff': 'Direct Employment (person/billion won)'
+        }
+
+        hydrogen_effect_map = {
+            'productioncoeff': 'Indirect Production (billion won)',
+            'valueaddedcoeff': 'Value Added (billion won)',
+            'jobcoeff': 'Job Creation (billion won)',
+            'directemploycoeff': 'Direct Employment (person/billion won)'
+        }
+
+        # Create individual scenario summaries by extracting from self.results
+        for sector_name, sheet_name, effect_map, is_hydrogen in [
+            ('1610', '1610_IO_Table', io_effect_map, False),
+            ('4506', '4506_IO_Table', io_effect_map, False),
+            ('H2S', 'H2S_Hydrogen', hydrogen_effect_map, True),
+            ('H2T', 'H2T_Hydrogen', hydrogen_effect_map, True)
+        ]:
+            if sector_name not in scenario_indices:
+                continue
+
+            print(f"\n{len(summary_tables)+1}. Creating summary for {sector_name}...")
+
+            idx = scenario_indices[sector_name]
+            scenario_key = f"scenario_{idx}"
+
+            # Extract this scenario's results from self.results
+            scenario_results = {}
+            for effect_type in effect_map.keys():
+                if effect_type in self.results:
+                    scenario_results[effect_type] = {}
+                    for year in years:
+                        if year in self.results[effect_type] and scenario_key in self.results[effect_type][year]:
+                            scenario_results[effect_type][year] = self.results[effect_type][year][scenario_key]
+
+            # Add 'N/A' for import in hydrogen scenarios
+            if is_hydrogen:
+                summary_df = create_summary_from_results(scenario_results, effect_map, is_hydrogen)
+                summary_df['Import (billion won)'] = 'N/A'
+                # Reorder columns
+                cols = ['Indirect Production (billion won)', 'Import (billion won)', 'Value Added (billion won)',
+                       'Job Creation (billion won)', 'Direct Employment (person/billion won)']
+                summary_df = summary_df[[c for c in cols if c in summary_df.columns]]
+            else:
+                summary_df = create_summary_from_results(scenario_results, effect_map, is_hydrogen)
+
+            summary_tables[sheet_name] = summary_df
+
+        # Create integrated summaries using existing integration methods
+        print(f"\n{len(summary_tables)+1}. Creating summary for Integrated 1610 & 4506...")
+        integrated_io = self.integrate_sectors_1610_4506()
+        if integrated_io:
+            summary_tables['Integrated_1610_4506'] = create_summary_from_results(
+                integrated_io, io_effect_map, is_hydrogen=False
+            )
+
+        print(f"\n{len(summary_tables)+1}. Creating summary for Integrated H2S & H2T...")
+        integrated_h2 = self.integrate_hydrogen_H2S_H2T()
+        if integrated_h2:
+            summary_df = create_summary_from_results(integrated_h2, hydrogen_effect_map, is_hydrogen=True)
+            summary_df['Import (billion won)'] = 'N/A'
+            # Reorder columns
+            cols = ['Indirect Production (billion won)', 'Import (billion won)', 'Value Added (billion won)',
+                   'Job Creation (billion won)', 'Direct Employment (person/billion won)']
+            summary_df = summary_df[[c for c in cols if c in summary_df.columns]]
+            summary_tables['Integrated_H2S_H2T'] = summary_df
+
+        # Export to Excel
+        output_file = f'{output_dir}/summary_tables_{min(years)}_{max(years)}.xlsx'
+        print(f"\nExporting all summary tables to {output_file}...")
+
+        with pd.ExcelWriter(output_file, engine='openpyxl') as writer:
+            for sheet_name, df in summary_tables.items():
+                df.to_excel(writer, sheet_name=sheet_name)
+                print(f"  ✅ Created sheet: {sheet_name}")
+
+        print("\n" + "=" * 80)
+        print(f"Successfully exported all {len(summary_tables)} summary tables!")
+        print(f"File location: {output_file}")
+        print("=" * 80)
+
+        return summary_tables
+
 
 if __name__ == "__main__":
     # Example usage
@@ -870,11 +982,16 @@ if __name__ == "__main__":
     # Run analysis for all scenarios
     analyzer.run_all_scenarios()
 
+    # Save individual scenario results
+    analyzer.save_individual_scenario_csvs(output_dir='output')
+
+    # Save integrated scenarios (1610+4506 and H2S+H2T)
+    analyzer.save_integrated_scenarios(output_dir='output')
+
+    # Save code_h aggregated integrated scenarios
+    analyzer.save_integrated_code_h_results(output_dir='output')
+
     # Display summary
     analyzer.display_summary()
-
-    # Create output tables and charts
-    analyzer.create_summary_tables()
-    analyzer.create_summary_charts()
 
     print("\nScenario analysis complete! Check the 'output' directory for detailed results.")

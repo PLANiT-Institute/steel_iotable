@@ -2,7 +2,7 @@ import pandas as pd
 from typing import Dict
 
 class HydrogenTableAnalyzer:
-    def __init__(self, data_file: str = '../data/hydrogentable_2020.xlsx'):
+    def __init__(self, data_file: str = '../data/hydrogentable.xlsx'):
         """Initialize the Hydrogen Table Analyzer with clean data structure."""
         self.data_file = data_file
         self.mapping = None
