@@ -240,6 +240,178 @@ class Visualization:
         print("All yearly trends created!")
         print("=" * 80)
 
+    def get_top_10_sectors(self, scenario: str, effect_type: str, year: int, n: int = 10):
+        """
+        Get top N sectors for a scenario using existing analyzer methods.
+
+        Args:
+            scenario: '1610', '4506', 'H2S', 'H2T', '1610&4506', 'H2S&H2T'
+            effect_type: Effect type key
+            year: Year to analyze
+            n: Number of top sectors (default: 10)
+
+        Returns:
+            DataFrame with top N sectors or None
+        """
+        impacts_data = None
+
+        # Get data from appropriate source
+        if scenario == '1610&4506':
+            # Use integration method
+            integrated = self.scenario_analyzer.integrate_sectors_1610_4506()
+            if integrated and effect_type in integrated and year in integrated[effect_type]:
+                impacts_data = integrated[effect_type][year]['impacts']
+
+        elif scenario == 'H2S&H2T':
+            # Use integration method
+            integrated = self.scenario_analyzer.integrate_hydrogen_H2S_H2T()
+            if integrated and effect_type in integrated and year in integrated[effect_type]:
+                impacts_data = integrated[effect_type][year]['impacts']
+
+        else:
+            # Single scenario - extract from results
+            idx = None
+            for i, row in self.scenario_analyzer.scenarios_data.iterrows():
+                if str(row['sector']) == scenario:
+                    idx = i
+                    break
+
+            if idx is not None and effect_type in self.scenario_analyzer.results:
+                scenario_key = f"scenario_{idx}"
+                if year in self.scenario_analyzer.results[effect_type]:
+                    if scenario_key in self.scenario_analyzer.results[effect_type][year]:
+                        impacts_data = self.scenario_analyzer.results[effect_type][year][scenario_key]['result']['impacts']
+
+        # Process impacts data
+        if not impacts_data:
+            return None
+
+        # Convert to DataFrame and get top N by absolute value
+        import pandas as pd
+        df = pd.DataFrame(impacts_data)
+        df['abs_impact'] = df['impact'].abs()
+        top_n = df.nlargest(n, 'abs_impact')[['sector_code', 'sector_name', 'impact']].reset_index(drop=True)
+
+        return top_n
+
+    def plot_top_10_sectors(self, scenario: str, effect_type: str, year: int, show_fig: bool = True):
+        """
+        Create bar chart for top 10 sectors.
+
+        Args:
+            scenario: '1610', '4506', 'H2S', 'H2T', '1610&4506', 'H2S&H2T'
+            effect_type: Effect type key
+            year: Year to analyze
+            show_fig: Whether to display the figure
+
+        Returns:
+            Plotly Figure or None
+        """
+        top_10 = self.get_top_10_sectors(scenario, effect_type, year)
+
+        if top_10 is None or len(top_10) == 0:
+            print(f"No data available for {scenario} - {effect_type} - {year}")
+            return None
+
+        # Effect type labels
+        effect_labels = {
+            'indirect_prod': 'Indirect Production',
+            'indirect_import': 'Import',
+            'value_added': 'Value Added',
+            'jobcoeff': 'Job Creation',
+            'directemploycoeff': 'Direct Employment',
+            'productioncoeff': 'Indirect Production',
+            'valueaddedcoeff': 'Value Added'
+        }
+
+        # Determine unit
+        if effect_type in ['jobcoeff', 'directemploycoeff']:
+            if scenario in ['H2S', 'H2T', 'H2S&H2T']:
+                unit = 'Billion Won'
+            else:
+                unit = 'Person'
+        else:
+            unit = 'Million Won'
+
+        # Create colors based on positive/negative
+        colors = ['#2ecc71' if x > 0 else '#e74c3c' for x in top_10['impact']]
+
+        # Create figure
+        fig = go.Figure()
+
+        fig.add_trace(go.Bar(
+            y=top_10['sector_name'],
+            x=top_10['impact'],
+            orientation='h',
+            marker=dict(color=colors),
+            text=top_10['impact'].apply(lambda x: f'{x:,.0f}'),
+            textposition='outside',
+            hovertemplate='<b>%{y}</b><br>Code: ' + top_10['sector_code'].astype(str) +
+                         '<br>Impact: %{x:,.0f}<extra></extra>'
+        ))
+
+        fig.update_layout(
+            title=f'Top 10 Sectors - {scenario} | {effect_labels.get(effect_type, effect_type)} ({year})',
+            xaxis_title=f'Impact ({unit})',
+            yaxis_title='',
+            height=600,
+            showlegend=False,
+            template='plotly_white'
+        )
+
+        if show_fig:
+            fig.show()
+
+        return fig
+
+    def create_all_top10_charts(self, year: int = 2050, output_dir: str = 'output/plotly_charts',
+                                save_html: bool = True):
+        """
+        Create all top 10 sector charts for a given year.
+
+        Args:
+            year: Year to analyze (default: 2050)
+            output_dir: Directory to save HTML files
+            save_html: Whether to save HTML files
+        """
+        import os
+        if save_html:
+            os.makedirs(output_dir, exist_ok=True)
+
+        print(f"Creating top 10 sector charts for year {year}...")
+        print("=" * 80)
+
+        # Define all combinations
+        combinations = [
+            # IO Table scenarios
+            ('1610', 'indirect_prod'),
+            ('1610', 'indirect_import'),
+            ('1610', 'jobcoeff'),
+            ('4506', 'indirect_prod'),
+            ('4506', 'indirect_import'),
+            ('4506', 'jobcoeff'),
+            ('1610&4506', 'indirect_prod'),
+            ('1610&4506', 'indirect_import'),
+            ('1610&4506', 'jobcoeff'),
+
+            # Hydrogen scenarios
+            ('H2S&H2T', 'productioncoeff'),
+            ('H2S&H2T', 'jobcoeff'),
+        ]
+
+        for scenario, effect in combinations:
+            print(f"\nCreating {scenario} - {effect}...")
+            fig = self.plot_top_10_sectors(scenario, effect, year, show_fig=False)
+
+            if fig and save_html:
+                filename = f"{output_dir}/top10_{scenario}_{effect}_{year}.html"
+                fig.write_html(filename)
+                print(f"  ✅ Saved: {filename}")
+
+        print("\n" + "=" * 80)
+        print(f"All top 10 charts created for year {year}!")
+        print("=" * 80)
+
 
 if __name__ == "__main__":
     from scenario_analyzer import ScenarioAnalyzer
@@ -250,6 +422,11 @@ if __name__ == "__main__":
 
     print("\nCreating visualizations...")
     viz = Visualization(analyzer)
+
+    # Create all yearly trends
     viz.create_all_trends(save_html=True)
+
+    # Create all top 10 sector charts for year 2050
+    viz.create_all_top10_charts(year=2050, save_html=True)
 
     print("\nDone!")
