@@ -465,6 +465,41 @@ class IOTableAnalyzer:
         for impact in results['impacts']:
             print(f"{impact['code_h']:<8} {impact['product_h']:<30} {impact['sector_count']:>10} {impact['impact']:>18,.2f}")
 
+    def create_combined_data(self, all_results: Dict, coefficient_types: list, coeff_names: Dict) -> list:
+        """
+        Create combined data from all analysis results with code_h and product_h mappings.
+
+        Args:
+            all_results: Dictionary of results from calculate_direct_effects for each coefficient type
+            coefficient_types: List of coefficient types to include
+            coeff_names: Dictionary mapping coefficient types to display names
+
+        Returns:
+            List of dictionaries containing combined data for all coefficient types
+        """
+        combined_data = []
+
+        for coeff_type in coefficient_types:
+            if all_results[coeff_type] and all_results[coeff_type]['impacts']:
+                results = all_results[coeff_type]
+                for impact in results['impacts']:
+                    # Get code_h and product_h if available
+                    sector_code = impact['sector_code']
+                    code_h = self.basic_to_code_h.get(sector_code, '') if hasattr(self, 'basic_to_code_h') else ''
+                    product_h = self.code_h_to_product_h.get(code_h, '') if code_h and hasattr(self, 'code_h_to_product_h') else ''
+
+                    combined_data.append({
+                        'coefficient_type': coeff_type,
+                        'coefficient_name': coeff_names[coeff_type],
+                        'sector_code': sector_code,
+                        'sector_name': impact['sector_name'],
+                        'code_h': code_h,
+                        'product_h': product_h,
+                        'impact': impact['impact']
+                    })
+
+        return combined_data
+
 if __name__ == "__main__":
     analyzer = IOTableAnalyzer()
 
