@@ -17,7 +17,7 @@ pio.templates.default = "plotly_white"
 class Visualization:
     """Visualization class using externally-saved results."""
 
-    def __init__(self, analyzer):
+    def __init__(self, analyzer, output_dir: str = 'output'):
         """
         Initialize Visualization by loading saved scenario results.
 
@@ -25,7 +25,7 @@ class Visualization:
             output_dir: Directory where result csvs are stored.
         """
         self.analyzer = analyzer
-        self.output_dir = self.analyzer.output_dir
+        self.output_dir = output_dir
         self.results = {}
         self.integrated_results = {}
         self.code_h_results = {}
@@ -385,9 +385,9 @@ class Visualization:
         }
 
         # Determine unit
-        if effect_type in ['jobcoeff', 'directemploycoeff']:
+        if effect_type in ['jobcoeff']:
             if scenario in ['H2S', 'H2T', 'H2S&H2T']:
-                unit = 'Billion Won'
+                unit = 'Million Won'
             else:
                 unit = 'Person'
         else:
@@ -808,7 +808,7 @@ if __name__ == "__main__":
     analyzer.run_all_scenarios()
 
     print("\nCreating visualizations...")
-    viz = Visualization(analyzer)
+    viz = Visualization(analyzer, output_dir='output')
 
     # Create all yearly trends
     viz.create_all_trends(save_html=True)
