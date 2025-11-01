@@ -589,6 +589,279 @@ class ScenarioAnalyzer:
                     last_year_data = self.aggregated_results[effect_type][years[-1]]
                     print(f"  Latest Year ({years[-1]}) Total Impact: {last_year_data['total_aggregate_impact']:,.2f} Million KRW")
 
+    def integrate_sectors_1610_4506(self, effect_types: List[str] = None):
+        """
+        Integrate results from sectors 1610 and 4506 (IO Table) by summing impacts for each sector code.
+
+        Args:
+            effect_types: List of effect types to integrate. If None, uses IO table effect types.
+
+        Returns:
+            Dictionary with integrated results for each effect type and year
+        """
+        if effect_types is None:
+            effect_types = ['indirect_prod', 'indirect_import', 'value_added', 'jobcoeff', 'directemploycoeff']
+
+        print("Integrating sectors 1610 and 4506 (sector-by-sector)...")
+
+        # Find scenario indices for 1610 and 4506
+        idx_1610 = None
+        idx_4506 = None
+
+        for idx, row in self.scenarios_data.iterrows():
+            sector = str(row['sector'])
+            if sector == '1610':
+                idx_1610 = idx
+            elif sector == '4506':
+                idx_4506 = idx
+
+        if idx_1610 is None or idx_4506 is None:
+            print("Could not find scenarios for sectors 1610 and/or 4506")
+            return None
+
+        # Create integrated results
+        integrated_results = {}
+
+        for effect_type in effect_types:
+            if effect_type not in self.results:
+                continue
+
+            integrated_results[effect_type] = {}
+
+            for year in self.results[effect_type].keys():
+                scenario_key_1610 = f"scenario_{idx_1610}"
+                scenario_key_4506 = f"scenario_{idx_4506}"
+
+                # Get results for both sectors
+                result_1610 = self.results[effect_type][year].get(scenario_key_1610)
+                result_4506 = self.results[effect_type][year].get(scenario_key_4506)
+
+                if not result_1610 or not result_4506:
+                    continue
+
+                # Merge the impacts sector-by-sector (summing for each sector code)
+                combined_impacts = {}
+
+                # Add impacts from 1610
+                for impact in result_1610['result']['impacts']:
+                    sector_code = str(impact['sector_code'])
+                    combined_impacts[sector_code] = {
+                        'sector_code': sector_code,
+                        'sector_name': impact['sector_name'],
+                        'impact': impact['impact']
+                    }
+
+                # Add impacts from 4506 (sum if sector exists, add new if not)
+                for impact in result_4506['result']['impacts']:
+                    sector_code = str(impact['sector_code'])
+                    if sector_code in combined_impacts:
+                        # Sum the impacts for this sector
+                        combined_impacts[sector_code]['impact'] += impact['impact']
+                    else:
+                        # New sector from 4506
+                        combined_impacts[sector_code] = {
+                            'sector_code': sector_code,
+                            'sector_name': impact['sector_name'],
+                            'impact': impact['impact']
+                        }
+
+                # Convert to list and sort by absolute impact
+                impacts_list = list(combined_impacts.values())
+                impacts_list.sort(key=lambda x: abs(x['impact']), reverse=True)
+
+                # Calculate total impact
+                total_impact = sum([imp['impact'] for imp in impacts_list])
+
+                integrated_results[effect_type][year] = {
+                    'impacts': impacts_list,
+                    'total_impact': total_impact,
+                    'num_affected_sectors': len(impacts_list)
+                }
+
+        return integrated_results
+
+    def integrate_hydrogen_H2S_H2T(self, effect_types: List[str] = None):
+        """
+        Integrate results from hydrogen scenarios H2S and H2T by summing impacts for each sector code.
+
+        Args:
+            effect_types: List of effect types to integrate. If None, uses hydrogen effect types.
+
+        Returns:
+            Dictionary with integrated results for each effect type and year
+        """
+        if effect_types is None:
+            effect_types = ['productioncoeff', 'valueaddedcoeff', 'jobcoeff', 'directemploycoeff']
+
+        print("Integrating hydrogen scenarios H2S and H2T (sector-by-sector)...")
+
+        # Find scenario indices for H2S and H2T
+        idx_H2S = None
+        idx_H2T = None
+
+        for idx, row in self.scenarios_data.iterrows():
+            sector = str(row['sector'])
+            input_table = str(row['input'])
+            if 'hydrogen' in input_table.lower():
+                if sector == 'H2S':
+                    idx_H2S = idx
+                elif sector == 'H2T':
+                    idx_H2T = idx
+
+        if idx_H2S is None or idx_H2T is None:
+            print("Could not find scenarios for H2S and/or H2T")
+            return None
+
+        # Create integrated results
+        integrated_results = {}
+
+        for effect_type in effect_types:
+            if effect_type not in self.results:
+                continue
+
+            integrated_results[effect_type] = {}
+
+            for year in self.results[effect_type].keys():
+                scenario_key_H2S = f"scenario_{idx_H2S}"
+                scenario_key_H2T = f"scenario_{idx_H2T}"
+
+                # Get results for both scenarios
+                result_H2S = self.results[effect_type][year].get(scenario_key_H2S)
+                result_H2T = self.results[effect_type][year].get(scenario_key_H2T)
+
+                if not result_H2S or not result_H2T:
+                    continue
+
+                # Merge the impacts sector-by-sector (summing for each sector code)
+                combined_impacts = {}
+
+                # Add impacts from H2S
+                for impact in result_H2S['result']['impacts']:
+                    sector_code = str(impact['sector_code'])
+                    combined_impacts[sector_code] = {
+                        'sector_code': sector_code,
+                        'sector_name': impact['sector_name'],
+                        'impact': impact['impact']
+                    }
+
+                # Add impacts from H2T (sum if sector exists, add new if not)
+                for impact in result_H2T['result']['impacts']:
+                    sector_code = str(impact['sector_code'])
+                    if sector_code in combined_impacts:
+                        # Sum the impacts for this sector
+                        combined_impacts[sector_code]['impact'] += impact['impact']
+                    else:
+                        # New sector from H2T
+                        combined_impacts[sector_code] = {
+                            'sector_code': sector_code,
+                            'sector_name': impact['sector_name'],
+                            'impact': impact['impact']
+                        }
+
+                # Convert to list and sort by absolute impact
+                impacts_list = list(combined_impacts.values())
+                impacts_list.sort(key=lambda x: abs(x['impact']), reverse=True)
+
+                # Calculate total impact
+                total_impact = sum([imp['impact'] for imp in impacts_list])
+
+                integrated_results[effect_type][year] = {
+                    'impacts': impacts_list,
+                    'total_impact': total_impact,
+                    'num_affected_sectors': len(impacts_list)
+                }
+
+        return integrated_results
+
+    def save_integrated_scenarios(self, output_dir: str = 'output'):
+        """
+        Save integrated scenario results to CSV files for both 1610+4506 and H2S+H2T.
+        Each CSV contains sector-by-sector impacts across all years.
+        """
+        import os
+        os.makedirs(output_dir, exist_ok=True)
+
+        print(f"Saving integrated scenario results to {output_dir}/...")
+
+        # Integrate 1610 + 4506
+        integrated_io = self.integrate_sectors_1610_4506()
+        if integrated_io:
+            self._save_integrated_csv(integrated_io, '1610_4506', 'iotable_2020', output_dir)
+
+        # Integrate H2S + H2T
+        integrated_h2 = self.integrate_hydrogen_H2S_H2T()
+        if integrated_h2:
+            self._save_integrated_csv(integrated_h2, 'H2S_H2T', 'hydrogentable_2020', output_dir)
+
+        print("Integrated scenarios saved successfully!")
+
+    def _save_integrated_csv(self, integrated_results: Dict, scenario_name: str,
+                            input_table: str, output_dir: str):
+        """
+        Helper function to save integrated results to CSV files.
+
+        Args:
+            integrated_results: Dictionary of integrated results (from integrate methods)
+            scenario_name: Name of the integrated scenario (e.g., '1610_4506' or 'H2S_H2T')
+            input_table: Input table name
+            output_dir: Output directory
+        """
+        for effect_type, year_results in integrated_results.items():
+            if not year_results:
+                continue
+
+            # Sort years
+            sorted_years = sorted(year_results.keys())
+
+            # Collect all unique output sectors across all years
+            all_output_sectors = {}
+            for year, result in year_results.items():
+                for impact in result['impacts']:
+                    sector_code = str(impact['sector_code'])
+                    sector_name = impact['sector_name']
+                    if sector_code not in all_output_sectors:
+                        all_output_sectors[sector_code] = sector_name
+
+            # Create matrix data (rows = output sectors, columns = years)
+            matrix_data = []
+            for sector_code, sector_name in all_output_sectors.items():
+                row = {
+                    'Sector_Code': sector_code,
+                    'Sector_Name': sector_name
+                }
+
+                # Add impact values for each year
+                for year in sorted_years:
+                    impact_value = 0.0
+                    result = year_results[year]
+
+                    for impact in result['impacts']:
+                        if str(impact['sector_code']) == sector_code:
+                            impact_value = impact['impact']
+                            break
+
+                    row[str(year)] = impact_value
+
+                matrix_data.append(row)
+
+            # Create DataFrame
+            if matrix_data:
+                df = pd.DataFrame(matrix_data)
+
+                # Sort by the latest year's absolute impact
+                latest_year_col = str(sorted_years[-1])
+                if latest_year_col in df.columns:
+                    df['abs_latest'] = df[latest_year_col].abs()
+                    df = df.sort_values('abs_latest', ascending=False)
+                    df = df.drop('abs_latest', axis=1)
+
+                # Create filename
+                filename = f"{output_dir}/scenario_{effect_type}_{scenario_name}_{input_table}.csv"
+
+                # Save to CSV with UTF-8-BOM encoding
+                df.to_csv(filename, index=False, encoding='utf-8-sig')
+                print(f"Created {filename}")
+
 
 if __name__ == "__main__":
     # Example usage

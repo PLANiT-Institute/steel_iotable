@@ -2,7 +2,7 @@ import pandas as pd
 from typing import Dict
 
 class IOTableAnalyzer:
-    def __init__(self, data_file: str = 'data/iotable_2023.xlsx'):
+    def __init__(self, data_file: str = '../data/iotable_2023.xlsx'):
         """Initialize the I-O Table Analyzer with clean data structure."""
         self.data_file = data_file
         self.mapping = None
@@ -465,6 +465,49 @@ class IOTableAnalyzer:
         for impact in results['impacts']:
             print(f"{impact['code_h']:<8} {impact['product_h']:<30} {impact['sector_count']:>10} {impact['impact']:>18,.2f}")
 
+    def calculate_all_effects(self, selected_sector, demand_change: float, quiet: bool = True) -> tuple:
+        """
+        Calculate all coefficient effects for a given sector and demand change.
+
+        Args:
+            selected_sector: Sector code (string like "0111" or integer like 2711)
+            demand_change: Change in final demand (positive or negative)
+            quiet: If True, suppress print output (default True for GUI use)
+
+        Returns:
+            Tuple of (all_results, coefficient_types, coeff_names)
+            - all_results: Dictionary with results for each coefficient type
+            - coefficient_types: List of coefficient types analyzed
+            - coeff_names: Dictionary mapping coefficient types to display names
+        """
+        # Define coefficient types and their display names
+        coefficient_types = ["indirect_prod", "indirect_import", "value_added", "jobcoeff", "directemploycoeff"]
+        coeff_names = {
+            "indirect_prod": "Production-inducing",
+            "indirect_import": "Import-inducing",
+            "value_added": "Value-Added",
+            "jobcoeff": "Total Job Creation",
+            "directemploycoeff": "Direct Employment"
+        }
+
+        # Calculate all coefficient effects
+        all_results = {}
+        for coeff_type in coefficient_types:
+            try:
+                results = self.calculate_direct_effects(
+                    selected_sector,
+                    demand_change,
+                    coeff_type,
+                    quiet=quiet
+                )
+                all_results[coeff_type] = results
+            except Exception as e:
+                if not quiet:
+                    print(f"Error calculating {coeff_type}: {str(e)}")
+                all_results[coeff_type] = None
+
+        return all_results, coefficient_types, coeff_names
+
     def create_combined_data(self, all_results: Dict, coefficient_types: list, coeff_names: Dict) -> list:
         """
         Create combined data from all analysis results with code_h and product_h mappings.
@@ -503,16 +546,38 @@ class IOTableAnalyzer:
 if __name__ == "__main__":
     analyzer = IOTableAnalyzer()
 
-    # Basic sector level analysis
+    # Test calculate_all_effects
     print("\n" + "="*70)
-    print("BASIC SECTOR LEVEL ANALYSIS")
+    print("TEST: calculate_all_effects()")
     print("="*70)
-    results_basic = analyzer.calculate_direct_effects("1610", 345000, 'indirect_prod')
-    analyzer.display_results(results_basic)
+    target_sector = "1610"
+    demand_change = 345000
 
-    # code_h aggregated analysis
+    all_results, coefficient_types, coeff_names = analyzer.calculate_all_effects(
+        target_sector,
+        demand_change,
+        quiet=False
+    )
+    for coeff_type in coefficient_types:
+        print(f"\n--- Results for coefficient type: {coeff_type} ({coeff_names[coeff_type]}) ---")
+        results = all_results[coeff_type]
+        if results:
+            analyzer.display_results(results)
+        else:
+            print("No results available.")
+
+    # Test create_combined_data
     print("\n" + "="*70)
-    print("CODE_H AGGREGATED ANALYSIS")
+    print("TEST: create_combined_data()")
     print("="*70)
-    results_code_h = analyzer.calculate_effects_by_code_h("1610", 345000, 'indirect_prod')
-    analyzer.display_code_h_results(results_code_h)
+    combined_data = analyzer.create_combined_data(all_results, coefficient_types, coeff_names)
+    # Print header
+    if combined_data:
+        print(f"{'CoeffType':<18} {'CoeffName':<18} {'SectorCode':<10} {'SectorName':<30} {'Code_H':<8} {'Product_H':<16} {'Impact':>12}")
+        print("-" * 110)
+        for row in combined_data[:10]:  # Only show up to 10 rows for brevity
+            print(f"{row['coefficient_type']:<18} {row['coefficient_name']:<18} {row['sector_code']:<10} {row['sector_name']:<30} {row['code_h']:<8} {row['product_h']:<16} {row['impact']:>12,.2f}")
+        if len(combined_data) > 10:
+            print(f"... ({len(combined_data)} total rows)")
+    else:
+        print("No combined data available.")

@@ -165,6 +165,78 @@ class HydrogenTableAnalyzer:
         if len(results['impacts']) > 20:
             print(f"\n... and {len(results['impacts']) - 20} more sectors with smaller impacts")
 
+    def calculate_all_effects(self, scenario: str, demand_change: float, quiet: bool = True) -> tuple:
+        """
+        Calculate all coefficient effects for a given hydrogen scenario and demand change.
+
+        Args:
+            scenario: Hydrogen scenario (H2P, H2S, H2T, H2U)
+            demand_change: Change in final demand (positive or negative)
+            quiet: If True, suppress print output (default True for GUI use)
+
+        Returns:
+            Tuple of (all_results, coefficient_types, coeff_names)
+            - all_results: Dictionary with results for each coefficient type
+            - coefficient_types: List of coefficient types analyzed
+            - coeff_names: Dictionary mapping coefficient types to display names
+        """
+        # Define coefficient types and their display names
+        coefficient_types = ["productioncoeff", "valueaddedcoeff", "jobcoeff", "directemploycoeff"]
+        coeff_names = {
+            "productioncoeff": "Production-inducing",
+            "valueaddedcoeff": "Value-Added",
+            "jobcoeff": "Wage-inducing",
+            "directemploycoeff": "Total Job Creation"
+        }
+
+        # Calculate all coefficient effects
+        all_results = {}
+        for coeff_type in coefficient_types:
+            try:
+                results = self.calculate_hydrogen_effects(
+                    scenario,
+                    demand_change,
+                    coeff_type,
+                    quiet=quiet
+                )
+                all_results[coeff_type] = results
+            except Exception as e:
+                if not quiet:
+                    print(f"Error calculating {coeff_type}: {str(e)}")
+                all_results[coeff_type] = None
+
+        return all_results, coefficient_types, coeff_names
+
+    def create_combined_data(self, all_results: Dict, coefficient_types: list, coeff_names: Dict) -> list:
+        """
+        Create combined data from all analysis results.
+
+        Args:
+            all_results: Dictionary of results from calculate_hydrogen_effects for each coefficient type
+            coefficient_types: List of coefficient types to include
+            coeff_names: Dictionary mapping coefficient types to display names
+
+        Returns:
+            List of dictionaries containing combined data for all coefficient types
+        """
+        combined_data = []
+
+        for coeff_type in coefficient_types:
+            if all_results[coeff_type] and all_results[coeff_type]['impacts']:
+                results = all_results[coeff_type]
+                for impact in results['impacts']:
+                    sector_code = impact['sector_code']
+
+                    combined_data.append({
+                        'coefficient_type': coeff_type,
+                        'coefficient_name': coeff_names[coeff_type],
+                        'sector_code': sector_code,
+                        'sector_name': impact['sector_name'],
+                        'impact': impact['impact']
+                    })
+
+        return combined_data
+
     # def get_shock_data(self) -> pd.DataFrame:
     #     """Return the SHOCK data for reference."""
     #     return self.shock_data
