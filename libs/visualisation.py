@@ -67,9 +67,9 @@ class Visualization:
                 # Use integration method results
                 if effect_type in integrated_io:
                     years = sorted(integrated_io[effect_type].keys())
-                    values = [integrated_io[effect_type][y]['total_impact'] /
-                             (1000 if effect_type in ['indirect_prod', 'indirect_import', 'value_added', 'jobcoeff'] else 1)
-                             for y in years]
+                    # Don't divide job creation by 1000 - keep as persons
+                    divisor = 1000 if effect_type in ['indirect_prod', 'indirect_import', 'value_added'] else 1
+                    values = [integrated_io[effect_type][y]['total_impact'] / divisor for y in years]
 
                     fig.add_trace(go.Scatter(
                         x=years, y=values, mode='lines+markers',
@@ -418,6 +418,486 @@ class Visualization:
         print(f"All top 10 charts created for year {year}!")
         print("=" * 80)
 
+    def create_code_h_heatmap(self, effect_type: str, year: int = 2030, top_n: int = 10,
+                              output_path: str = None, show_fig: bool = True, use_plotly: bool = True):
+        """
+        Create a Code_H sector heatmap showing top N sectors for each Code_H category.
+        
+        Args:
+            effect_type: Effect type (e.g., 'indirect_prod', 'jobcoeff')
+            year: Year to analyze (default: 2030)
+            top_n: Number of top sectors to show per Code_H (default: 10)
+            output_path: Path to save the figure (default: auto-generated)
+            show_fig: Whether to display the figure (default: True)
+            use_plotly: Whether to use Plotly (True) or matplotlib (False) (default: True)
+            
+        Returns:
+            Plotly Figure object or matplotlib Figure object
+        """
+        if output_path is None:
+            ext = '.html' if use_plotly else '.png'
+            output_path = f'code_h_heatmap_{effect_type}_{year}_top{top_n}{ext}'
+        
+        # Get aggregated results for the effect type and year
+        if effect_type not in self.scenario_analyzer.aggregated_results:
+            raise ValueError(f"Effect type '{effect_type}' not found in results")
+        
+        if year not in self.scenario_analyzer.aggregated_results[effect_type]:
+            raise ValueError(f"Year {year} not found for effect type '{effect_type}'")
+        
+        # Prepare dataframe with sector impacts
+        year_data = self.scenario_analyzer.aggregated_results[effect_type][year]
+        sector_impacts = year_data['sector_impacts']
+        
+        # Build dataframe
+        df_data = []
+        for impact in sector_impacts:
+            sector_code = impact['sector_code']
+            sector_name = impact['sector_name']
+            
+            # Get Code_H and Product_H mapping from IO analyzer
+            code_h = ''
+            product_h = ''
+            
+            if hasattr(self.scenario_analyzer, 'io_analyzer') and self.scenario_analyzer.io_analyzer:
+                code_h = self.scenario_analyzer.io_analyzer.basic_to_code_h.get(str(sector_code), '')
+                if code_h:
+                    product_h = self.scenario_analyzer.io_analyzer.code_h_to_product_h.get(code_h, code_h)
+            
+            # For H2 scenarios without Code_H mapping, use sector_code as Code_H
+            if not code_h:
+                code_h = str(sector_code)
+                product_h = f"H2 Scenario ({sector_code})"
+            
+            # Include all sectors (with or without Code_H mapping)
+            df_data.append({
+                'Sector_Code': sector_code,
+                'Sector_Name': sector_name,
+                'Code_H': code_h,
+                'Product_H': product_h,
+                f'Year_{year}': impact['total_impact']
+            })
+        
+        if not df_data:
+            raise ValueError("No data available for this effect type and year")
+        
+        df = pd.DataFrame(df_data)
+        
+        # Call the appropriate heatmap function
+        if use_plotly:
+            fig = Visualization.plot_code_h_sector_top10_heatmap_plotly(
+                df=df,
+                effect=effect_type,
+                year=year,
+                top_n=top_n,
+                output_path=output_path
+            )
+            if show_fig:
+                fig.show()
+        else:
+            fig = Visualization.plot_code_h_sector_top10_heatmap(
+                df=df,
+                effect=None,  # Will use Year_{year} column
+                year=year,
+                top_n=top_n,
+                output_path=output_path
+            )
+            if not show_fig:
+                plt.close(fig)
+        
+        return fig
+
+    @staticmethod
+    def plot_code_h_sector_top10_heatmap(
+        df,
+        effect=None,
+        year=2030,
+        top_n=10,
+        font_path='/System/Library/Fonts/Supplemental/AppleGothic.ttf',
+        output_path='code_h_sector_top10_heatmap.png'
+    ):
+        """
+        Plot a heatmap showing top N sectors within each Code_H group.
+        X-axis: Product_H category names
+        Y-axis: Rank (1 to top_n)
+        Cell colors: Impact values (true values showing positive/negative)
+        Cell labels: Sector names (formatted in three rows with smaller font to prevent overlap)
+        Ranking: By absolute values (largest magnitude first)
+
+        Args:
+            df (pd.DataFrame): DataFrame with 'Sector_Name', 'Code_H', 'Product_H', and value columns.
+            effect (str): Effect type to select column (e.g. 'indirect_prod').
+            year (int): Year to select column (e.g. 2030).
+            top_n (int): Number of top sectors to show for each Code_H (default: 10).
+            font_path (str): Font file path for axis/labels.
+            output_path (str): File path to save the generated heatmap PNG.
+        """
+        # Determine value column based on year and effect
+        if effect is not None:
+            possible_cols = [
+                f"{effect}_{year}",
+                f"{effect}",
+                f"Year_{year}",
+            ]
+        else:
+            possible_cols = [
+                f"Year_{year}",
+                'Year_2030'  # fallback
+            ]
+
+        # Find first match for value column
+        value_column = None
+        for col in possible_cols:
+            if col in df.columns:
+                value_column = col
+                break
+        if value_column is None:
+            raise ValueError(f"Could not find value column matching {possible_cols} in dataframe columns: {df.columns}")
+
+        # Prepare data - check for Product_H column
+        required_cols = {'Sector_Name', 'Code_H', value_column}
+        if not required_cols.issubset(df.columns):
+            raise ValueError(f"Missing required columns in dataframe: wanted {required_cols}")
+
+        # Use Product_H if available, otherwise fall back to Code_H
+        use_product_h = 'Product_H' in df.columns
+        category_col = 'Product_H' if use_product_h else 'Code_H'
+        
+        df_prep = df[['Sector_Name', 'Code_H', category_col, value_column]].copy()
+
+        # Get all unique Code_H values (for grouping) and their Product_H names
+        code_to_product = {}
+        if use_product_h:
+            for code_h in df_prep['Code_H'].unique():
+                product_h = df_prep[df_prep['Code_H'] == code_h][category_col].iloc[0]
+                code_to_product[code_h] = product_h
+            all_codes = sorted(df_prep['Code_H'].unique())
+        else:
+            all_codes = sorted(df_prep['Code_H'].unique())
+            code_to_product = {code: code for code in all_codes}
+
+        # Create data structure for top N sectors per Code_H
+        display_labels = [code_to_product[code] for code in all_codes]
+        df_labels = pd.DataFrame(index=range(top_n), columns=display_labels)
+        df_values = pd.DataFrame(index=range(top_n), columns=display_labels, dtype=float)
+
+        for code in all_codes:
+            df_group = df_prep[df_prep['Code_H'] == code].copy()
+            
+            # Sort by ABSOLUTE value (for ranking) but keep true values for coloring
+            df_group['abs_value'] = df_group[value_column].abs()
+            df_group_sorted = df_group.sort_values(by='abs_value', ascending=False).head(top_n)
+
+            # Format sector names in THREE rows with very small font
+            labels = []
+            for name in df_group_sorted['Sector_Name'].tolist():
+                # Split ALL names into exactly three lines
+                words = name.split()
+                if len(words) >= 3:
+                    # Split into 3 lines - divide words into three parts
+                    third = len(words) // 3
+                    remainder = len(words) % 3
+                    
+                    # Distribute words evenly
+                    if remainder == 0:
+                        line1 = ' '.join(words[:third])
+                        line2 = ' '.join(words[third:2*third])
+                        line3 = ' '.join(words[2*third:])
+                    elif remainder == 1:
+                        line1 = ' '.join(words[:third+1])
+                        line2 = ' '.join(words[third+1:2*third+1])
+                        line3 = ' '.join(words[2*third+1:])
+                    else:  # remainder == 2
+                        line1 = ' '.join(words[:third+1])
+                        line2 = ' '.join(words[third+1:2*third+2])
+                        line3 = ' '.join(words[2*third+2:])
+                    labels.append(f"{line1}\n{line2}\n{line3}")
+                elif len(words) == 2:
+                    # Two words: put on first two lines, empty third
+                    labels.append(f"{words[0]}\n{words[1]}\n")
+                else:
+                    # Single word: put on first line, two empty lines
+                    labels.append(f"{name}\n\n")
+            
+            # Use TRUE values for coloring (not absolute)
+            values = df_group_sorted[value_column].tolist()
+
+            # Pad if less than top_n sectors available
+            padded_labels = labels + [''] * (top_n - len(labels))
+            padded_values = values + [np.nan] * (top_n - len(values))
+
+            display_label = code_to_product[code]
+            df_labels[display_label] = padded_labels
+            df_values[display_label] = padded_values
+
+        # Create visualization
+        font_properties = fm.FontProperties(fname=font_path)
+        fig_height = max(12, top_n * 1.2)  # Adjusted height for three-line labels
+        fig_width = max(16, len(all_codes) * 2.0)  # Increased width to prevent horizontal overlap
+
+        fig, ax = plt.subplots(figsize=(fig_width, fig_height))
+
+        # Create heatmap with diverging colormap (to show positive/negative)
+        sns.heatmap(
+            df_values,
+            annot=df_labels,
+            fmt='s',
+            cmap='RdBu_r',  # Red for positive, Blue for negative
+            center=0,  # Center colormap at zero
+            linewidths=0.8,  # Slightly thicker lines for better separation
+            linecolor='lightgray',
+            annot_kws={"size": 2.5, "color": "black", "fontproperties": font_properties, 
+                       "va": "center", "ha": "center", "linespacing": 1.3},
+            cbar_kws={'label': f'Impact Value'},
+            ax=ax
+        )
+
+        # Configure axes
+        ax.xaxis.tick_top()
+        ax.xaxis.set_label_position('top')
+        ax.tick_params(axis='x', rotation=45, labelsize=10, pad=2)
+        ax.tick_params(axis='y', labelsize=10)
+
+        # Set title and labels
+        ax.set_xlabel('Product Category', fontsize=11, fontproperties=font_properties)
+        ax.set_ylabel('Rank (Top Sectors by Impact Magnitude)', fontsize=11, fontproperties=font_properties)
+
+        # Set y-axis labels as ranks
+        ax.set_yticklabels([f'#{i+1}' for i in range(top_n)])
+
+        # Apply font properties to tick labels
+        for label in ax.get_xticklabels():
+            label.set_fontproperties(font_properties)
+        for label in ax.get_yticklabels():
+            label.set_fontproperties(font_properties)
+
+        # Configure colorbar
+        cbar = ax.collections[0].colorbar
+        cbar.set_label(f'Impact Value (+ / -)', fontsize=10, fontproperties=font_properties)
+        for t in cbar.ax.get_yticklabels():
+            t.set_fontproperties(font_properties)
+
+        plt.tight_layout()
+        plt.savefig(output_path, bbox_inches='tight', dpi=150)
+        print(f"Heatmap saved to {output_path}")
+        plt.show()
+
+        return fig
+
+    @staticmethod
+    def plot_code_h_sector_top10_heatmap_plotly(
+        df,
+        effect=None,
+        year=2030,
+        top_n=10,
+        output_path='code_h_sector_top10_heatmap.html'
+    ):
+        """
+        Plot an interactive Plotly heatmap showing top N sectors within each Code_H group.
+        X-axis: Product_H category names
+        Y-axis: Rank (1 to top_n)
+        Cell colors: Impact values (true values showing positive/negative)
+        Cell labels: Sector names (formatted in multiple lines)
+        Ranking: By absolute values (largest magnitude first)
+
+        Args:
+            df (pd.DataFrame): DataFrame with 'Sector_Name', 'Code_H', 'Product_H', and value columns.
+            effect (str): Effect type to select column (e.g. 'indirect_prod').
+            year (int): Year to select column (e.g. 2030).
+            top_n (int): Number of top sectors to show for each Code_H (default: 10).
+            output_path (str): File path to save the generated heatmap HTML.
+            
+        Returns:
+            Plotly Figure object
+        """
+        # Determine value column based on year and effect
+        if effect is not None:
+            possible_cols = [
+                f"{effect}_{year}",
+                f"{effect}",
+                f"Year_{year}",
+            ]
+        else:
+            possible_cols = [
+                f"Year_{year}",
+                'Year_2030'  # fallback
+            ]
+
+        # Find first match for value column
+        value_column = None
+        for col in possible_cols:
+            if col in df.columns:
+                value_column = col
+                break
+        if value_column is None:
+            raise ValueError(f"Could not find value column matching {possible_cols} in dataframe columns: {df.columns}")
+
+        # Prepare data - check for Product_H column
+        required_cols = {'Sector_Name', 'Code_H', value_column}
+        if not required_cols.issubset(df.columns):
+            raise ValueError(f"Missing required columns in dataframe: wanted {required_cols}")
+
+        # Use Product_H if available, otherwise fall back to Code_H
+        use_product_h = 'Product_H' in df.columns
+        category_col = 'Product_H' if use_product_h else 'Code_H'
+        
+        df_prep = df[['Sector_Name', 'Code_H', category_col, value_column]].copy()
+
+        # Get all unique Code_H values (for grouping) and their Product_H names
+        code_to_product = {}
+        if use_product_h:
+            for code_h in df_prep['Code_H'].unique():
+                product_h = df_prep[df_prep['Code_H'] == code_h][category_col].iloc[0]
+                code_to_product[code_h] = product_h
+            all_codes = sorted(df_prep['Code_H'].unique())
+        else:
+            all_codes = sorted(df_prep['Code_H'].unique())
+            code_to_product = {code: code for code in all_codes}
+
+        # Create data structure for top N sectors per Code_H
+        display_labels = [code_to_product[code] for code in all_codes]
+        z_values = []  # 2D array for heatmap colors
+        text_labels = []  # 2D array for hover text
+        hover_text = []  # 2D array for detailed hover info
+
+        for rank in range(top_n):
+            row_values = []
+            row_labels = []
+            row_hover = []
+            
+            for code in all_codes:
+                df_group = df_prep[df_prep['Code_H'] == code].copy()
+                
+                # Sort by ABSOLUTE value (for ranking) but keep true values for coloring
+                df_group['abs_value'] = df_group[value_column].abs()
+                df_group_sorted = df_group.sort_values(by='abs_value', ascending=False)
+                
+                if rank < len(df_group_sorted):
+                    row_data = df_group_sorted.iloc[rank]
+                    sector_name = row_data['Sector_Name']
+                    value = row_data[value_column]
+                    
+                    # Format sector name with line breaks - ALWAYS THREE LINES
+                    words = sector_name.split()
+                    if len(words) >= 3:
+                        # Split into 3 lines - divide words into three parts
+                        third = len(words) // 3
+                        remainder = len(words) % 3
+                        
+                        # Distribute words evenly
+                        if remainder == 0:
+                            line1 = ' '.join(words[:third])
+                            line2 = ' '.join(words[third:2*third])
+                            line3 = ' '.join(words[2*third:])
+                        elif remainder == 1:
+                            line1 = ' '.join(words[:third+1])
+                            line2 = ' '.join(words[third+1:2*third+1])
+                            line3 = ' '.join(words[2*third+1:])
+                        else:  # remainder == 2
+                            line1 = ' '.join(words[:third+1])
+                            line2 = ' '.join(words[third+1:2*third+2])
+                            line3 = ' '.join(words[2*third+2:])
+                        formatted_name = f"{line1}<br>{line2}<br>{line3}"
+                    elif len(words) == 2:
+                        # Two words: put on first two lines, empty third
+                        formatted_name = f"{words[0]}<br>{words[1]}<br>"
+                    else:
+                        # Single word: just one line
+                        formatted_name = sector_name
+                    
+                    row_values.append(value)
+                    row_labels.append(formatted_name)
+                    row_hover.append(
+                        f"<b>{sector_name}</b><br>" +
+                        f"Rank: #{rank + 1}<br>" +
+                        f"Impact: {value:,.2f}<br>" +
+                        f"Category: {code_to_product[code]}"
+                    )
+                else:
+                    row_values.append(np.nan)
+                    row_labels.append('')
+                    row_hover.append('')
+            
+            z_values.append(row_values)
+            text_labels.append(row_labels)
+            hover_text.append(row_hover)
+
+        # Create Plotly heatmap
+        fig = go.Figure(data=go.Heatmap(
+            z=z_values,
+            x=display_labels,
+            y=[f'#{i+1}' for i in range(top_n)],
+            text=text_labels,
+            hovertext=hover_text,
+            hoverinfo='text',
+            texttemplate='%{text}',
+            textfont={"size": 5},  # Very small font size for sector names
+            colorscale='RdBu_r',  # Red for positive, Blue for negative
+            zmid=0,  # Center colormap at zero
+            colorbar=dict(
+                title=dict(text="Impact Value", side="right"),
+                tickformat=",",
+            ),
+            xgap=1,
+            ygap=1,
+        ))
+
+        # Effect type labels for title
+        effect_labels = {
+            'indirect_prod': 'Indirect Production',
+            'indirect_import': 'Indirect Import',
+            'value_added': 'Value Added',
+            'jobcoeff': 'Job Creation',
+            'directemploycoeff': 'Direct Employment',
+            'productioncoeff': 'Production Coeff',
+            'valueaddedcoeff': 'Value Added Coeff'
+        }
+        
+        # Scenario source information
+        scenario_sources = {
+            'indirect_prod': 'IO: 1610+4506',
+            'indirect_import': 'IO: 1610+4506',
+            'value_added': 'IO: 1610+4506',
+            'jobcoeff': 'All: IO+H2',
+            'directemploycoeff': 'All: IO+H2',
+            'productioncoeff': 'H2: H2S+H2T',
+            'valueaddedcoeff': 'H2: H2S+H2T'
+        }
+        
+        title_text = effect_labels.get(effect, effect)
+        source_text = scenario_sources.get(effect, 'All scenarios')
+        
+        # Update layout
+        fig.update_layout(
+            title=dict(
+                text=f'Top {top_n} Sectors by Product Category<br><sub>{title_text} ({source_text}) | Year {year}</sub>',
+                x=0.5,
+                xanchor='center',
+                font=dict(size=16)
+            ),
+            xaxis=dict(
+                title='Product Category',
+                side='top',
+                tickangle=-45,
+                tickfont=dict(size=11),
+            ),
+            yaxis=dict(
+                title='Rank (Top Sectors by Impact Magnitude)',
+                tickfont=dict(size=11),
+                autorange='reversed'
+            ),
+            width=max(1000, len(all_codes) * 100),
+            height=max(600, top_n * 60),
+            template='plotly_white',
+            margin=dict(l=150, r=150, t=150, b=100),
+        )
+
+        # Save to HTML
+        fig.write_html(output_path)
+        print(f"Interactive heatmap saved to {output_path}")
+        
+        return fig
+
     def plot_code_h_sector_ranking_heatmap(
         df,
         effect=None,
@@ -427,6 +907,7 @@ class Visualization:
     ):
         """
         Plot a heatmap showing sector rankings within each Code_H group, sorted by the specified value column.
+        (Original version showing all sectors)
 
         Args:
             df (pd.DataFrame): DataFrame containing sector data.
@@ -509,7 +990,7 @@ class Visualization:
             center=0,
             linewidths=0.5,
             linecolor='lightgray',
-            annot_kws={"size": 6, "color": "black", "fontproperties": font_properties},
+            annot_kws={"size": 8, "color": "black", "fontproperties": font_properties},
             cbar_kws={'label': f'Impact Value ({value_column})'}
         )
 
@@ -557,7 +1038,23 @@ if __name__ == "__main__":
     # Create all top 10 sector charts for year 2050
     #viz.create_all_top10_charts(year=2050, save_html=True)
 
-    #print(analyzer.results['indirect_prod'][2030].keys())
-    viz.plot_code_h_sector_ranking_heatmap(analyzer.integrate_sectors_1610_4506)
+    # Example: Create interactive Plotly Code_H heatmap for indirect production in 2030
+    print("\nCreating interactive Code_H heatmap (Plotly)...")
+    viz.create_code_h_heatmap(
+        effect_type='indirect_prod',
+        year=2030,
+        top_n=10,
+        use_plotly=True,
+        output_path='code_h_heatmap_indirect_prod_2030.html'
+    )
+    
+    # Example: Create static matplotlib Code_H heatmap for job creation in 2050
+    viz.create_code_h_heatmap(
+        effect_type='jobcoeff',
+        year=2050,
+        top_n=10,
+        use_plotly=False,
+        output_path='code_h_heatmap_jobcoeff_2050.png'
+    )
 
     print("\nDone!")

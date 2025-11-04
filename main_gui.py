@@ -89,7 +89,7 @@ def run_scenario_analysis():
 
     # Discover scenario files
     data_folder = Path("data")
-    scenario_files = sorted([f for f in data_folder.glob("scenarios_*.xlsx")])
+    scenario_files = sorted([f for f in data_folder.glob("scenarios_*.xlsx")], reverse=True)  # Latest first
 
     if not scenario_files:
         st.error("No scenario files found in the 'data' directory.")
@@ -97,12 +97,27 @@ def run_scenario_analysis():
 
     # Let user select a scenario file
     selected_file = st.selectbox(
-        "Select a scenario file to analyze",
+        "📁 Select a scenario file to analyze",
         [f.name for f in scenario_files],
-        key="run_analysis_scenario_file"
+        index=0,  # Default to first (latest if sorted reverse)
+        key="run_analysis_scenario_file",
+        help="Choose which scenario file to use for analysis. Latest files appear first."
     )
 
     selected_path = data_folder / selected_file
+    
+    # Show file info
+    col1, col2 = st.columns(2)
+    with col1:
+        st.info(f"📄 Selected: `{selected_file}`")
+    with col2:
+        # Show which file is currently loaded
+        if 'current_scenario_file' in st.session_state:
+            current = st.session_state.current_scenario_file
+            if current == selected_file:
+                st.success(f"✅ Currently loaded: `{current}`")
+            else:
+                st.warning(f"⚠️ Currently loaded: `{current}`")
 
     # Show preview option
     if st.checkbox("Preview selected scenario file", key="preview_run_analysis"):
@@ -134,7 +149,7 @@ def run_scenario_analysis():
                 # Store results in session state
                 st.session_state.scenario_analyzer = scenario_analyzer
                 st.session_state.scenario_results = scenario_analyzer.aggregated_results
-                st.session_state.scenario_file_used = selected_file
+                st.session_state.current_scenario_file = selected_file
 
                 st.success(f"✅ Analysis complete for {selected_file}!")
                 st.balloons()
@@ -656,144 +671,6 @@ def show_hydrogen_analysis():
             )
 
 
-def show_io_analysis():
-    """Display IO table analysis results."""
-    st.subheader("🏭 IO Table Analysis")
-
-    # Check if scenario analysis has been run
-    if not st.session_state.get('scenario_results') or not st.session_state.get('scenario_analyzer'):
-        st.warning("⚠️ No scenario analysis results available. Please run scenario analysis first.")
-        st.info("👈 Go to the 'Run Analysis' tab to generate data.")
-        return
-
-    scenario_analyzer = st.session_state.scenario_analyzer
-    results = st.session_state.scenario_results
-
-    # Filter IO-specific effect types
-    io_effects = ['indirect_prod', 'indirect_import', 'value_added', 'jobcoeff', 'directemploycoeff']
-    available_io_effects = [effect for effect in io_effects if effect in results and results[effect]]
-
-    if not available_io_effects:
-        st.warning("No IO table analysis results available.")
-        return
-
-    # SUMMARY TABLES SECTION
-    st.markdown("### 📋 Summary Tables")
-    st.markdown(f"Consolidated IO impact summary across years and effect types")
-
-    summary_years = target_years
-
-    # Define IO effect columns
-    io_effect_columns = {
-        'indirect_prod': 'Indirect Production (Million KRW)',
-        'indirect_import': 'Indirect Import (Million KRW)',
-        'value_added': 'Value Added (Million KRW)',
-        'jobcoeff': 'Job Creation (Persons)',
-        'directemploycoeff': 'Direct Employment (Persons)'
-    }
-
-    # Build consolidated summary table
-    summary_data = []
-    for year in summary_years:
-        row = {'Year': year}
-
-        for effect_type, column_name in io_effect_columns.items():
-            if effect_type in available_io_effects and year in results[effect_type]:
-                # Get total aggregate impact from the scenario_analyzer results
-                total_impact = results[effect_type][year]['total_aggregate_impact']
-                row[column_name] = total_impact
-            else:
-                row[column_name] = 0
-
-        summary_data.append(row)
-
-    if summary_data:
-        summary_df = pd.DataFrame(summary_data)
-
-        # Format for display
-        display_df = summary_df.copy()
-        for col in display_df.columns:
-            if col != 'Year':
-                display_df[col] = display_df[col].apply(lambda x: f"{x:,.2f}" if x != 0 else "0.00")
-
-        st.dataframe(display_df, use_container_width=True, hide_index=True)
-
-    st.markdown("---")
-
-    # FULL TABLES SECTION
-    st.markdown("### 📊 Full Tables (All Years)")
-
-    # Get all years
-    all_years_set = set()
-    for effect_type in available_io_effects:
-        if results[effect_type]:
-            all_years_set.update(results[effect_type].keys())
-    all_years = sorted(all_years_set)
-
-    # Define IO effect columns for full table
-    io_effect_columns = {
-        'indirect_prod': 'Indirect Production (Million KRW)',
-        'indirect_import': 'Indirect Import (Million KRW)',
-        'value_added': 'Value Added (Million KRW)',
-        'jobcoeff': 'Job Creation (Persons)',
-        'directemploycoeff': 'Direct Employment (Persons)'
-    }
-
-    # Build consolidated full table
-    full_data = []
-    for year in all_years:
-        row = {'Year': year}
-
-        for effect_type, column_name in io_effect_columns.items():
-            if effect_type in available_io_effects and year in results[effect_type]:
-                # Get total aggregate impact from the scenario_analyzer results
-                total_impact = results[effect_type][year]['total_aggregate_impact']
-                row[column_name] = total_impact
-            else:
-                row[column_name] = 0
-
-        full_data.append(row)
-
-    if full_data:
-        full_df = pd.DataFrame(full_data)
-
-        # Format for display
-        display_df = full_df.copy()
-        for col in display_df.columns:
-            if col != 'Year':
-                display_df[col] = display_df[col].apply(lambda x: f"{x:,.2f}" if x != 0 else "0.00")
-
-        st.dataframe(display_df, use_container_width=True, hide_index=True)
-
-        # Download button (Excel)
-        try:
-            from io import BytesIO
-
-            buffer = BytesIO()
-            with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-                full_df.to_excel(writer, sheet_name='IO Full Data', index=False)
-
-            buffer.seek(0)
-
-            st.download_button(
-                label=f"📥 Download IO Full Table (Excel)",
-                data=buffer,
-                file_name=f"io_full_consolidated_table.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                key=f"download_io_full_consolidated"
-            )
-        except ImportError:
-            # Fallback to CSV
-            csv = full_df.to_csv(index=False, encoding='utf-8-sig')
-            st.download_button(
-                label=f"📥 Download IO Full Table (CSV)",
-                data=csv,
-                file_name=f"io_full_consolidated_table.csv",
-                mime="text/csv",
-                key=f"download_io_full_consolidated"
-            )
-
-
 def filter_and_group_by_code_h(scenario_analyzer, sector_list):
     """Filter results by sectors and group by code_h categories."""
     filtered_results = {}
@@ -992,7 +869,6 @@ def show_total_tables():
         'value_added': '💎 Value Added Effects',
         'productioncoeff': '⚡ Production Coefficient (H2)',
         'valueaddedcoeff': '💎 Value Added Coefficient (H2)',
-        'jobcoeff': '👥 Job Creation Effects',
         'directemploycoeff': '👔 Direct Employment Effects'
     }
 
@@ -1257,7 +1133,7 @@ def show_individual_tables():
 
 def show_summary_visualizations():
     """Display summary visualizations and charts."""
-    st.title("📊 Summary Visualizations")
+    st.title("📊 Visualizations")
 
     # Check if scenario analysis has been run
     if not st.session_state.get('scenario_results') or not st.session_state.get('scenario_analyzer'):
@@ -1276,7 +1152,7 @@ def show_summary_visualizations():
         return
 
     # Create tabs for different visualization types
-    viz_tabs = st.tabs(["📈 Yearly Trends", "🗺️ Sector Maps"])
+    viz_tabs = st.tabs(["📈 Yearly Trends", "🗺️ Sector Maps", "🔥 Code_H Heatmap"])
 
     # TAB 1: Yearly Trends
     with viz_tabs[0]:
@@ -1413,42 +1289,175 @@ def show_summary_visualizations():
             except Exception as e:
                 st.error(f"Error generating sector map: {e}")
 
+    # TAB 3: Code_H Heatmap
+    with viz_tabs[2]:
+        st.markdown("### 🔥 Code_H Sector Heatmap")
+        st.markdown("Interactive heatmap showing top sectors by Product_H category, ranked by impact magnitude")
+        
+        st.info("💡 **How to use**: Select an effect type and year, then click 'Generate Heatmap' to create an interactive visualization showing the top sectors for each product category.")
+        
+        # Configuration options
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            heatmap_effect = st.selectbox(
+                "Effect Type",
+                options=['indirect_prod', 'indirect_import', 'value_added', 'jobcoeff', 'directemploycoeff',
+                        'productioncoeff', 'valueaddedcoeff'],
+                format_func=lambda x: {
+                    'indirect_prod': '💰 Indirect Production',
+                    'indirect_import': '🌐 Indirect Import',
+                    'value_added': '💎 Value Added',
+                    'jobcoeff': '👥 Job Creation',
+                    'directemploycoeff': '👔 Direct Employment',
+                    'productioncoeff': '⚡ Production Coeff (H2)',
+                    'valueaddedcoeff': '💎 Value Added Coeff (H2)'
+                }[x],
+                key="heatmap_effect"
+            )
+        
+        with col2:
+            heatmap_year = st.selectbox(
+                "Year",
+                options=[2026, 2030, 2040, 2050],
+                index=1,  # Default to 2030
+                key="heatmap_year"
+            )
+        
+        with col3:
+            heatmap_top_n = st.slider(
+                "Top N Sectors per Category",
+                min_value=5,
+                max_value=20,
+                value=10,
+                step=5,
+                key="heatmap_top_n"
+            )
+        
+        # Generate button
+        if st.button("🎨 Generate Heatmap", type="primary", key="btn_heatmap"):
+            with st.spinner("Creating interactive heatmap... This may take a moment."):
+                try:
+                    # Check if data exists for this effect type and year
+                    if heatmap_effect not in scenario_analyzer.aggregated_results:
+                        st.error(f"No data available for effect type: {heatmap_effect}")
+                        st.info("Please run scenario analysis first to generate data.")
+                    elif heatmap_year not in scenario_analyzer.aggregated_results[heatmap_effect]:
+                        st.error(f"No data available for year: {heatmap_year}")
+                        available_years = sorted(scenario_analyzer.aggregated_results[heatmap_effect].keys())
+                        st.info(f"Available years: {', '.join(map(str, available_years))}")
+                    else:
+                        # Get scenario information for this effect type
+                        year_data = scenario_analyzer.aggregated_results[heatmap_effect][heatmap_year]
+                        scenario_count = year_data['scenario_count']
+                        
+                        # Get actual scenarios from the analyzer's scenario data
+                        scenarios_list = []
+                        for idx, row in scenario_analyzer.scenarios_data.iterrows():
+                            sector = str(row['sector'])
+                            input_table = str(row['input'])
+                            scenarios_list.append(f"{sector} ({input_table})")
+                        
+                        # Determine which scenarios are included based on effect type
+                        if heatmap_effect in ['indirect_prod', 'indirect_import', 'value_added']:
+                            scenario_info = "📊 **IO Table Scenarios**: 1610 + 4506"
+                            scenario_detail = "Combined IO table results from coal and renewable sectors"
+                        elif heatmap_effect in ['productioncoeff', 'valueaddedcoeff']:
+                            scenario_info = "⚡ **Hydrogen Table Scenarios**: H2S + H2T"
+                            scenario_detail = "Combined hydrogen table results from storage and transport scenarios"
+                        elif heatmap_effect in ['jobcoeff', 'directemploycoeff']:
+                            scenario_info = f"👥 **Employment Scenarios**: All sectors ({scenario_count} scenarios)"
+                            scenario_detail = "Includes both IO (1610, 4506) and Hydrogen (H2S, H2T) employment effects"
+                        else:
+                            scenario_info = f"📊 **Scenarios**: {scenario_count} scenarios included"
+                            scenario_detail = "Mixed scenarios"
+                        
+                        # Show scenario information before heatmap
+                        st.info(f"{scenario_info} | 📅 Year: {heatmap_year} | 🎯 Top {heatmap_top_n} per category")
+                        st.caption(scenario_detail)
+                        
+                        # Generate the heatmap
+                        fig = viz.create_code_h_heatmap(
+                            effect_type=heatmap_effect,
+                            year=heatmap_year,
+                            top_n=heatmap_top_n,
+                            use_plotly=True,
+                            show_fig=False
+                        )
+                        
+                        # Display the interactive Plotly chart
+                        st.plotly_chart(fig, use_container_width=True)
+                        
+                        st.success(f"✅ Heatmap generated successfully for {heatmap_year}!")
+                        
+                        # Add explanation
+                        with st.expander("ℹ️ How to read this heatmap"):
+                            st.markdown("""
+                            **Understanding the Code_H Heatmap:**
+                            
+                            - **X-axis (Columns)**: Product categories (Product_H names)
+                            - **Y-axis (Rows)**: Ranking (#1 = highest impact, #10 = 10th highest)
+                            - **Colors**: 
+                                - 🔴 **Red** = Positive impact
+                                - 🔵 **Blue** = Negative impact
+                                - ⚪ **White** = Near zero impact
+                            - **Cell Text**: Sector names (split into multiple lines for readability)
+                            - **Ranking**: Based on **absolute values** (magnitude of impact)
+                            
+                            **Interactive Features:**
+                            - 🖱️ **Hover**: See full sector name and exact impact value
+                            - 🔍 **Zoom**: Click and drag to zoom into specific areas
+                            - 📐 **Pan**: Drag to move around the heatmap
+                            - 🔄 **Reset**: Double-click to reset the view
+                            - 💾 **Download**: Use the camera icon to save as PNG
+                            """)
+                        
+                        # Download option for HTML
+                        st.markdown("---")
+                        st.markdown("**📥 Save Interactive Heatmap**")
+                        st.info("The heatmap has been saved as an HTML file. You can download it from the 'libs/output/plotly_charts/' directory or use the camera icon in the chart to save as PNG.")
+                        
+                except Exception as e:
+                    st.error(f"❌ Error generating heatmap: {e}")
+                    st.exception(e)
+        
+        # Show sample if not generated yet
+        else:
+            st.markdown("---")
+            st.markdown("**📊 Sample Output Preview**")
+            st.image("https://via.placeholder.com/1200x600/f0f0f0/666666?text=Click+Generate+Heatmap+to+create+interactive+visualization", 
+                    caption="Interactive heatmap will appear here after clicking 'Generate Heatmap'")
+
 def main():
-    # Run scenario analysis on startup if not already done
-    if 'startup_analysis_done' not in st.session_state:
-        st.session_state.startup_analysis_done = False
-
-    if not st.session_state.startup_analysis_done:
-        # Find the first available scenario file
-        data_folder = Path("data")
-        scenario_files = sorted([f for f in data_folder.glob("scenarios_*.xlsx")])
-
-        if scenario_files:
-            selected_path = scenario_files[0]  # Use first file by default
-
-            try:
-                with st.spinner(f"Running initial scenario analysis for {selected_path.name}..."):
-                    # Initialize scenario analyzer with selected file
-                    scenario_analyzer = ScenarioAnalyzer(scenarios_file=str(selected_path))
-
-                    # Run all scenarios
-                    scenario_analyzer.run_all_scenarios()
-
-                    # Create summary tables
-                    scenario_analyzer.create_summary_tables(output_dir='output')
-
-                    # Store results in session state
-                    st.session_state.scenario_analyzer = scenario_analyzer
-                    st.session_state.scenario_results = scenario_analyzer.aggregated_results
-                    st.session_state.scenario_file_used = selected_path.name
-                    st.session_state.startup_analysis_done = True
-
-                    st.success(f"✅ Initial analysis complete for {selected_path.name}!")
-            except Exception as e:
-                st.error(f"Error running initial analysis: {str(e)}")
-
-    # Sidebar main navigation -- new primary options!
-    st.sidebar.title("Main Menu")
+    # Sidebar - Show scenario file info
+    st.sidebar.title("🏭 IO Analysis System")
+    
+    # Display currently loaded scenario file
+    st.sidebar.markdown("---")
+    st.sidebar.markdown("### 📁 Current Scenario File")
+    
+    data_folder = Path("data")
+    scenario_files = sorted([f for f in data_folder.glob("scenarios_*.xlsx")], reverse=True)
+    
+    if 'current_scenario_file' in st.session_state:
+        current_file = st.session_state.current_scenario_file
+        st.sidebar.success(f"✅ {current_file}")
+    else:
+        st.sidebar.warning("⚠️ No file loaded")
+        st.sidebar.info("Go to '🚀 Run Analysis' tab to load a scenario file")
+    
+    # Show available files
+    if scenario_files:
+        with st.sidebar.expander("📋 Available Files"):
+            for f in scenario_files:
+                is_current = st.session_state.get('current_scenario_file') == f.name
+                if is_current:
+                    st.success(f"● {f.name} (current)")
+                else:
+                    st.text(f"○ {f.name}")
+    
+    st.sidebar.markdown("---")
+    st.sidebar.markdown("### 📍 Main Menu")
     main_option = st.sidebar.radio(
         "      ",
         ["Scenarios", "Tables", "Visualisation"],
@@ -1464,7 +1473,7 @@ def main():
         st.title("📊 Analysis results in a table format")
 
         # Create tabs for different table views
-        tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["🚀 Run Analysis", "🔗 Integrated", "⚡ H2", "📊 Total", "🏭 IO Tables", "👤 Individual"])
+        tab1, tab2, tab3, tab4, tab5 = st.tabs(["🚀 Run Analysis", "🔗 Integrated", "⚡ H2", "📊 Total", "👤 Individual"])
 
         with tab1:
             run_scenario_analysis()
@@ -1479,9 +1488,6 @@ def main():
             show_total_tables()
 
         with tab5:
-            show_io_analysis()
-
-        with tab6:
             show_individual_tables()
     else:  # Visualisation
         show_summary_visualizations()
