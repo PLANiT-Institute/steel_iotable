@@ -3,8 +3,8 @@ import numpy as np
 from typing import Dict, List, Any
 import matplotlib.pyplot as plt
 import seaborn as sns
-from hydrogen_analyzer import HydrogenTableAnalyzer
-from io_analyzer import IOTableAnalyzer
+from libs.hydrogen_analyzer import HydrogenTableAnalyzer
+from libs.io_analyzer import IOTableAnalyzer
 
 class ScenarioAnalyzer:
     def __init__(self, scenarios_file: str = '../data/scenarios_1_2023.xlsx'):
@@ -583,12 +583,12 @@ class ScenarioAnalyzer:
         # Integrate 1610 + 4506
         integrated_io = self.integrate_sectors_1610_4506()
         if integrated_io:
-            self._save_integrated_csv(integrated_io, '1610_4506', 'iotable_2023', output_dir)
+            self._save_integrated_csv(integrated_io, '1610+4506', 'iotable_2023', output_dir)
 
         # Integrate H2S + H2T
         integrated_h2 = self.integrate_hydrogen_H2S_H2T()
         if integrated_h2:
-            self._save_integrated_csv(integrated_h2, 'H2S_H2T', 'hydrogentable_2023', output_dir)
+            self._save_integrated_csv(integrated_h2, 'H2S+H2T', 'hydrogentable_2023', output_dir)
 
         print("Integrated scenarios saved successfully!")
 
@@ -991,7 +991,5 @@ if __name__ == "__main__":
     # Save code_h aggregated integrated scenarios
     analyzer.save_integrated_code_h_results(output_dir='output')
 
-    # Display summary
-    analyzer.display_summary()
 
     print("\nScenario analysis complete! Check the 'output' directory for detailed results.")
