@@ -1,6 +1,6 @@
 import pandas as pd
 import numpy as np
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Optional
 import matplotlib.pyplot as plt
 import seaborn as sns
 from libs.hydrogen_analyzer import HydrogenTableAnalyzer
@@ -973,6 +973,58 @@ class ScenarioAnalyzer:
         print("=" * 80)
 
         return summary_tables
+
+    def calculate_combined_job_creation(
+        self,
+        year: int,
+        io_sectors: Optional[List[str]] = None,
+        h2_sectors: Optional[List[str]] = None
+    ) -> Dict[str, float]:
+        """Calculate combined job creation for IO and hydrogen sectors.
+
+        Args:
+            year: Target year for the calculation.
+            io_sectors: List of IO sector codes to include (default ['1610', '4506']).
+            h2_sectors: List of hydrogen sector codes to include (default ['H2S', 'H2T']).
+
+        Returns:
+            Dictionary containing IO-only, H2-only, and combined totals.
+        """
+        io_sectors = io_sectors or ['1610', '4506']
+        h2_sectors = h2_sectors or ['H2S', 'H2T']
+
+        io_job_total = 0.0
+        h2_job_total = 0.0
+
+        # Sum IO job creation (jobcoeff) results in persons
+        if 'jobcoeff' in self.results and year in self.results['jobcoeff']:
+            for scenario_key, scenario_data in self.results['jobcoeff'][year].items():
+                scenario_idx = int(scenario_key.split('_')[1])
+                scenario_row = self.scenarios_data.iloc[scenario_idx]
+                sector = str(scenario_row['sector'])
+                is_hydrogen = scenario_data.get('is_hydrogen', False)
+
+                if not is_hydrogen and sector in io_sectors:
+                    io_job_total += scenario_data.get('total_impact', 0.0)
+
+        # Sum hydrogen direct employment (persons)
+        if 'directemploycoeff' in self.results and year in self.results['directemploycoeff']:
+            for scenario_key, scenario_data in self.results['directemploycoeff'][year].items():
+                scenario_idx = int(scenario_key.split('_')[1])
+                scenario_row = self.scenarios_data.iloc[scenario_idx]
+                sector = str(scenario_row['sector'])
+                is_hydrogen = scenario_data.get('is_hydrogen', False)
+
+                if (is_hydrogen or sector in h2_sectors) and sector in h2_sectors:
+                    h2_job_total += scenario_data.get('total_impact', 0.0)
+
+        combined_total = io_job_total + h2_job_total
+
+        return {
+            'io_total': io_job_total,
+            'h2_total': h2_job_total,
+            'combined_total': combined_total
+        }
 
 
 if __name__ == "__main__":

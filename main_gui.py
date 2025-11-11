@@ -816,24 +816,8 @@ def show_total_tables():
         row['Value Added (Million KRW)'] = value_added_val
 
         # 4. Job Creation = sum of jobcoeff for 1610+4506 and direct employment for H2S+H2T
-        job_creation_val = 0
-
-        # Sum jobcoeff for 1610 + 4506 (if present)
-        if 'jobcoeff' in available_effects and year in results['jobcoeff']:
-            code_h_sums = results['jobcoeff'][year].get('code_h_sums', {})
-            jobcoeff_1610 = code_h_sums.get('1610', 0)
-            jobcoeff_4506 = code_h_sums.get('4506', 0)
-            job_creation_val += jobcoeff_1610 + jobcoeff_4506
-
-        # Sum directemploycoeff for H2S + H2T (if present)
-        if 'directemploycoeff' in available_effects and year in results['directemploycoeff']:
-            code_h_sums = results['directemploycoeff'][year].get('code_h_sums', {})
-            directemp_h2s = code_h_sums.get('H2S', 0)
-            directemp_h2t = code_h_sums.get('H2T', 0)
-            job_creation_val += directemp_h2s + directemp_h2t
-
-
-        row['Job Creation (Persons)'] = job_creation_val
+        job_totals = scenario_analyzer.calculate_combined_job_creation(year)
+        row['Job Creation (Persons)'] = job_totals['combined_total']
 
         summary_data.append(row)
 
