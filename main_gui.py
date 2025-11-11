@@ -39,7 +39,7 @@ def show_scenarios():
     st.markdown("---")
     # Discover all Excel files in "data" folder whose name starts with "scenario_"
     data_folder = Path("data")
-    scenario_files = sorted([f for f in data_folder.glob("scenarios_*.xlsx")])
+    scenario_files = sorted([f for f in data_folder.glob("scenario_*.xlsx")])
     if not scenario_files:
         st.warning("No scenario files found in the 'data' directory. Please add files named like scenario_x_xxxx.xlsx.")
         return
@@ -1437,7 +1437,7 @@ def main():
     st.sidebar.markdown("### 📁 Current Scenario File")
     
     data_folder = Path("data")
-    scenario_files = sorted([f for f in data_folder.glob("scenarios_*.xlsx")], reverse=True)
+    scenario_files = sorted([f for f in data_folder.glob("scenario_*.xlsx")], reverse=True)
     
     if 'current_scenario_file' in st.session_state:
         current_file = st.session_state.current_scenario_file

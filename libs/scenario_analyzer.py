@@ -7,7 +7,7 @@ from libs.hydrogen_analyzer import HydrogenTableAnalyzer
 from libs.io_analyzer import IOTableAnalyzer
 
 class ScenarioAnalyzer:
-    def __init__(self, scenarios_file: str = '../data/scenarios_1_2023.xlsx'):
+    def __init__(self, scenarios_file: str = '../data/scenario_1.xlsx'):
         """Initialize the Scenario Analyzer with scenarios data."""
         self.scenarios_file = scenarios_file
         self.scenarios_data = None
