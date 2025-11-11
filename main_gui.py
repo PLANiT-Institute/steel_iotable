@@ -89,7 +89,7 @@ def run_scenario_analysis():
 
     # Discover scenario files
     data_folder = Path("data")
-    scenario_files = sorted([f for f in data_folder.glob("scenarios_*.xlsx")], reverse=True)  # Latest first
+    scenario_files = sorted([f for f in data_folder.glob("scenario_*.xlsx")], reverse=True)  # Latest first
 
     if not scenario_files:
         st.error("No scenario files found in the 'data' directory.")
@@ -1430,7 +1430,7 @@ def show_summary_visualizations():
 
 def main():
     # Sidebar - Show scenario file info
-    st.sidebar.title("🏭 IO Analysis System")
+    st.sidebar.title("🏭 Input Output Analysis")
     
     # Display currently loaded scenario file
     st.sidebar.markdown("---")
@@ -1460,7 +1460,7 @@ def main():
     st.sidebar.markdown("### 📍 Main Menu")
     main_option = st.sidebar.radio(
         "      ",
-        ["Scenarios", "Tables", "Visualisation"],
+        ["Scenarios", "Analysis", "Visualisation"],
         index=0
     )
 
@@ -1468,9 +1468,9 @@ def main():
     if main_option == "Scenarios":
         # Scenario analysis/batch analysis area: now loads scenario_x_xxxx excel files from data folder!
         show_scenarios()
-    elif main_option == "Tables":
+    elif main_option == "Analysis":
         # Show tabs for different table types
-        st.title("📊 Analysis results in a table format")
+        st.title("📊 Analysis results")
 
         # Create tabs for different table views
         tab1, tab2, tab3, tab4, tab5 = st.tabs(["🚀 Run Analysis", "🔗 Integrated", "⚡ H2", "📊 Total", "👤 Individual"])
