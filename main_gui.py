@@ -85,62 +85,61 @@ def run_scenario_analysis():
     """Run scenario analysis and store results in session state."""
     st.title("🚀 Run Scenario Analysis")
     st.markdown("---")
-    st.markdown("Select a scenario file and run the complete analysis to generate integrated tables.")
+    st.markdown("Automatically analyze all scenarios from Data_v10.xlsx")
 
-    # Discover scenario files
+    # Fixed data file
     data_folder = Path("data")
-    scenario_files = sorted([f for f in data_folder.glob("scenario_*.xlsx")], reverse=True)  # Latest first
+    data_file = data_folder / "Data_v10.xlsx"
 
-    if not scenario_files:
-        st.error("No scenario files found in the 'data' directory.")
+    # Check if file exists
+    if not data_file.exists():
+        st.error(f"❌ Data file not found: {data_file}")
+        st.info("Please ensure Data_v10.xlsx exists in the data folder.")
         return
 
-    # Let user select a scenario file
-    selected_file = st.selectbox(
-        "📁 Select a scenario file to analyze",
-        [f.name for f in scenario_files],
-        index=0,  # Default to first (latest if sorted reverse)
-        key="run_analysis_scenario_file",
-        help="Choose which scenario file to use for analysis. Latest files appear first."
-    )
-
-    selected_path = data_folder / selected_file
-    
     # Show file info
-    col1, col2 = st.columns(2)
-    with col1:
-        st.info(f"📄 Selected: `{selected_file}`")
-    with col2:
-        # Show which file is currently loaded
-        if 'current_scenario_file' in st.session_state:
-            current = st.session_state.current_scenario_file
-            if current == selected_file:
-                st.success(f"✅ Currently loaded: `{current}`")
-            else:
-                st.warning(f"⚠️ Currently loaded: `{current}`")
+    st.info(f"📄 Data file: `Data_v10.xlsx`")
+
+    # Show which file is currently loaded
+    if 'current_scenario_file' in st.session_state:
+        current = st.session_state.current_scenario_file
+        if current == "Data_v10.xlsx":
+            st.success(f"✅ Currently loaded: `{current}`")
+        else:
+            st.warning(f"⚠️ Different file loaded: `{current}`")
 
     # Show preview option
-    if st.checkbox("Preview selected scenario file", key="preview_run_analysis"):
+    if st.checkbox("Preview scenario sheets", key="preview_run_analysis"):
         try:
-            scenario_df = pd.read_excel(selected_path)
-            st.dataframe(scenario_df)
+            excel_file = pd.ExcelFile(data_file)
+            scenario_sheets = [sheet for sheet in excel_file.sheet_names if sheet.lower().startswith('scenario')]
+            st.write(f"**Found {len(scenario_sheets)} scenario sheets:**")
+            for sheet_name in scenario_sheets:
+                with st.expander(f"📋 {sheet_name}"):
+                    scenario_df = pd.read_excel(data_file, sheet_name=sheet_name)
+                    st.dataframe(scenario_df)
         except Exception as e:
-            st.error(f"Failed to load scenario file: {e}")
+            st.error(f"Failed to load data file: {e}")
 
     st.markdown("---")
 
     # Display current status
     if st.session_state.get('scenario_results'):
         st.info("✅ Scenario analysis results are available in session.")
+        # Show which scenario sheets are loaded
+        if 'scenario_analyzer' in st.session_state:
+            analyzer = st.session_state.scenario_analyzer
+            if hasattr(analyzer, 'scenario_sheet_names'):
+                st.write(f"**Loaded scenario sheets:** {', '.join(analyzer.scenario_sheet_names)}")
     else:
         st.warning("⚠️ No scenario analysis results available yet.")
 
     # Run analysis button
     if st.button("🚀 Run Complete Scenario Analysis", type="primary", use_container_width=True):
-        with st.spinner(f"Running scenario analysis for {selected_file}..."):
+        with st.spinner(f"Running scenario analysis for Data_v10.xlsx..."):
             try:
-                # Initialize scenario analyzer with selected file
-                scenario_analyzer = ScenarioAnalyzer(scenarios_file=str(selected_path))
+                # Initialize scenario analyzer with Data_v10.xlsx
+                scenario_analyzer = ScenarioAnalyzer(scenarios_file=str(data_file))
 
                 # Run all scenarios
                 st.info("Running scenario analysis... This may take a few minutes.")
@@ -149,13 +148,14 @@ def run_scenario_analysis():
                 # Store results in session state
                 st.session_state.scenario_analyzer = scenario_analyzer
                 st.session_state.scenario_results = scenario_analyzer.aggregated_results
-                st.session_state.current_scenario_file = selected_file
+                st.session_state.current_scenario_file = "Data_v10.xlsx"
 
-                st.success(f"✅ Analysis complete for {selected_file}!")
-                st.balloons()
+                st.success(f"✅ Analysis complete for Data_v10.xlsx!")
 
                 # Show summary of results
                 st.markdown("### 📊 Analysis Summary")
+                st.write(f"**Scenario sheets loaded:** {', '.join(scenario_analyzer.scenario_sheet_names)}")
+
                 effect_types = list(scenario_analyzer.aggregated_results.keys())
                 st.write(f"**Effect types analyzed:** {len(effect_types)}")
                 st.write(f"**Effect types:** {', '.join(effect_types)}")
@@ -169,6 +169,84 @@ def run_scenario_analysis():
             except Exception as e:
                 st.error(f"Error running analysis: {str(e)}")
                 st.exception(e)
+
+
+def filter_results_by_scenario_sheet(scenario_analyzer, sheet_name):
+    """Filter and aggregate results for a specific scenario sheet."""
+    filtered_results = {}
+
+    # Get all effect types from the original results
+    effect_types = list(scenario_analyzer.results.keys())
+
+    for effect_type in effect_types:
+        filtered_results[effect_type] = {}
+
+        if effect_type not in scenario_analyzer.results:
+            continue
+
+        # Process each year
+        for year, year_data in scenario_analyzer.results[effect_type].items():
+            # Filter scenarios by sheet name
+            filtered_year_data = {}
+
+            for scenario_key, scenario_data in year_data.items():
+                # Extract scenario index
+                scenario_idx = int(scenario_key.split('_')[1])
+                scenario_row = scenario_analyzer.scenarios_data.iloc[scenario_idx]
+
+                # Check if this scenario matches our sheet filter
+                if scenario_row['scenario_sheet'] == sheet_name:
+                    filtered_year_data[scenario_key] = scenario_data
+
+            if filtered_year_data:
+                # Aggregate the filtered results for this year
+                all_sector_impacts = {}
+                total_aggregate_impact = 0
+                scenario_count = 0
+
+                for scenario_key, scenario_data in filtered_year_data.items():
+                    result = scenario_data['result']
+                    total_aggregate_impact += result['total_impact']
+                    scenario_count += 1
+
+                    # Aggregate sector-level impacts
+                    for impact in result['impacts']:
+                        sector_code = str(impact['sector_code'])
+                        sector_name = impact['sector_name']
+                        impact_value = impact['impact']
+
+                        if sector_code not in all_sector_impacts:
+                            all_sector_impacts[sector_code] = {
+                                'sector_name': sector_name,
+                                'total_impact': 0,
+                                'scenario_count': 0
+                            }
+
+                        all_sector_impacts[sector_code]['total_impact'] += impact_value
+                        all_sector_impacts[sector_code]['scenario_count'] += 1
+
+                # Convert to sorted list
+                aggregated_impacts = []
+                for sector_code, data in all_sector_impacts.items():
+                    aggregated_impacts.append({
+                        'sector_code': sector_code,
+                        'sector_name': data['sector_name'],
+                        'total_impact': data['total_impact'],
+                        'avg_impact': data['total_impact'] / data['scenario_count'],
+                        'scenario_count': data['scenario_count']
+                    })
+
+                aggregated_impacts.sort(key=lambda x: abs(x['total_impact']), reverse=True)
+
+                filtered_results[effect_type][year] = {
+                    'total_aggregate_impact': total_aggregate_impact,
+                    'scenario_count': scenario_count,
+                    'avg_aggregate_impact': total_aggregate_impact / scenario_count if scenario_count > 0 else 0,
+                    'num_affected_sectors': len(all_sector_impacts),
+                    'sector_impacts': aggregated_impacts
+                }
+
+    return filtered_results
 
 
 def filter_results_by_sectors(scenario_analyzer, sector_list):
@@ -951,6 +1029,161 @@ def show_total_tables():
             else:
                 st.info("No code_h category data available")
 
+def show_scenario_comparison():
+    """Display comparison between different scenario sheets."""
+    st.subheader("🔀 Scenario Sheet Comparison")
+
+    # Check if scenario analysis has been run
+    if not st.session_state.get('scenario_results') or not st.session_state.get('scenario_analyzer'):
+        st.warning("⚠️ No scenario analysis results available. Please run scenario analysis first.")
+        st.info("👈 Go to the 'Run Analysis' tab to generate data.")
+        return
+
+    scenario_analyzer = st.session_state.scenario_analyzer
+
+    # Get scenario sheet names
+    if not hasattr(scenario_analyzer, 'scenario_sheet_names'):
+        st.error("Scenario sheet information not available.")
+        return
+
+    scenario_sheets = scenario_analyzer.scenario_sheet_names
+    st.info(f"**Available scenario sheets:** {', '.join(scenario_sheets)}")
+
+    # Select scenarios to compare
+    selected_scenarios = st.multiselect(
+        "Select scenario sheets to compare:",
+        options=scenario_sheets,
+        default=scenario_sheets,  # Select all by default
+        key="scenario_comparison_selection"
+    )
+
+    if len(selected_scenarios) < 1:
+        st.warning("Please select at least one scenario sheet to display.")
+        return
+
+    st.markdown("---")
+
+    # Select effect type for comparison
+    effect_options = {
+        'indirect_prod': '💰 Indirect Production',
+        'indirect_import': '🌐 Indirect Import',
+        'value_added': '💎 Value Added',
+        'jobcoeff': '👥 Job Creation',
+        'directemploycoeff': '👔 Direct Employment',
+        'productioncoeff': '⚡ Production Coefficient (H2)',
+        'valueaddedcoeff': '💎 Value Added Coefficient (H2)'
+    }
+
+    selected_effect = st.selectbox(
+        "Select effect type to compare:",
+        options=list(effect_options.keys()),
+        format_func=lambda x: effect_options[x],
+        key="scenario_comparison_effect"
+    )
+
+    st.markdown("---")
+    st.markdown(f"### 📊 Comparison Table: {effect_options[selected_effect]}")
+
+    # Get all years
+    all_years_set = set()
+    for effect_type in scenario_analyzer.aggregated_results.keys():
+        if scenario_analyzer.aggregated_results[effect_type]:
+            all_years_set.update(scenario_analyzer.aggregated_results[effect_type].keys())
+    all_years = sorted(all_years_set)
+
+    # Build comparison table
+    comparison_data = []
+    for year in all_years:
+        row = {'Year': year}
+
+        for sheet_name in selected_scenarios:
+            # Filter results for this scenario sheet
+            sheet_results = filter_results_by_scenario_sheet(scenario_analyzer, sheet_name)
+
+            if selected_effect in sheet_results and year in sheet_results[selected_effect]:
+                total_impact = sheet_results[selected_effect][year]['total_aggregate_impact']
+                row[sheet_name] = total_impact
+            else:
+                row[sheet_name] = 0
+
+        comparison_data.append(row)
+
+    if comparison_data:
+        comparison_df = pd.DataFrame(comparison_data)
+
+        # Format for display
+        display_df = comparison_df.copy()
+        for col in display_df.columns:
+            if col != 'Year':
+                display_df[col] = display_df[col].apply(lambda x: f"{x:,.2f}" if x != 0 else "0.00")
+
+        st.dataframe(display_df, use_container_width=True, hide_index=True)
+
+        # Download button
+        try:
+            from io import BytesIO
+
+            buffer = BytesIO()
+            with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+                comparison_df.to_excel(writer, sheet_name='Scenario Comparison', index=False)
+
+            buffer.seek(0)
+
+            st.download_button(
+                label=f"📥 Download Scenario Comparison (Excel)",
+                data=buffer,
+                file_name=f"scenario_comparison_{selected_effect}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                key=f"download_scenario_comparison"
+            )
+        except ImportError:
+            # Fallback to CSV
+            csv_data = comparison_df.to_csv(index=False, encoding='utf-8-sig')
+            st.download_button(
+                label=f"📥 Download Scenario Comparison (CSV)",
+                data=csv_data,
+                file_name=f"scenario_comparison_{selected_effect}.csv",
+                mime="text/csv",
+                key=f"download_scenario_comparison"
+            )
+
+        # Visualization: Line chart comparing scenarios over years
+        st.markdown("---")
+        st.markdown("### 📈 Trend Comparison")
+
+        fig = go.Figure()
+
+        for sheet_name in selected_scenarios:
+            y_values = [comparison_df[comparison_df['Year'] == year][sheet_name].values[0]
+                       if len(comparison_df[comparison_df['Year'] == year]) > 0 else 0
+                       for year in all_years]
+
+            fig.add_trace(go.Scatter(
+                x=all_years,
+                y=y_values,
+                mode='lines+markers',
+                name=sheet_name,
+                line=dict(width=2),
+                marker=dict(size=8)
+            ))
+
+        fig.update_layout(
+            title=f"{effect_options[selected_effect]} - Scenario Comparison",
+            xaxis_title="Year",
+            yaxis_title="Impact Value",
+            hovermode='x unified',
+            height=500,
+            legend=dict(
+                yanchor="top",
+                y=0.99,
+                xanchor="left",
+                x=0.01
+            )
+        )
+
+        st.plotly_chart(fig, use_container_width=True)
+
+
 def show_individual_tables():
     """Display individual sector tables for 1610, 4506, H2S, H2T."""
     st.subheader("👤 Individual Sector Analysis")
@@ -1136,7 +1369,7 @@ def show_summary_visualizations():
         return
 
     # Create tabs for different visualization types
-    viz_tabs = st.tabs(["📈 Yearly Trends", "🗺️ Sector Maps", "🔥 Code_H Heatmap"])
+    viz_tabs = st.tabs(["📈 Yearly Trends", "🗺️ Sector Maps", "🔥 Code_H Heatmap", "📊 Grid Comparison"])
 
     # TAB 1: Yearly Trends
     with viz_tabs[0]:
@@ -1409,37 +1642,174 @@ def show_summary_visualizations():
         else:
             st.markdown("---")
             st.markdown("**📊 Sample Output Preview**")
-            st.image("https://via.placeholder.com/1200x600/f0f0f0/666666?text=Click+Generate+Heatmap+to+create+interactive+visualization", 
+            st.image("https://via.placeholder.com/1200x600/f0f0f0/666666?text=Click+Generate+Heatmap+to+create+interactive+visualization",
                     caption="Interactive heatmap will appear here after clicking 'Generate Heatmap'")
+
+    # TAB 4: Grid Comparison
+    with viz_tabs[3]:
+        st.markdown("### 📊 Multi-Scenario Grid Comparison")
+        st.markdown("View multiple effect types and scenarios in a grid layout")
+
+        # Check if scenario analyzer is available
+        if not hasattr(scenario_analyzer, 'scenario_sheet_names'):
+            st.error("Scenario sheet information not available.")
+        else:
+            scenario_sheets = scenario_analyzer.scenario_sheet_names
+
+            # Select scenarios to compare
+            selected_scenarios_grid = st.multiselect(
+                "Select scenario sheets to display:",
+                options=scenario_sheets,
+                default=scenario_sheets[:min(4, len(scenario_sheets))],  # Default to first 4
+                key="grid_scenario_selection"
+            )
+
+            if len(selected_scenarios_grid) < 1:
+                st.warning("Please select at least one scenario sheet.")
+            else:
+                # Select effect types to display
+                effect_options_grid = {
+                    'indirect_prod': '💰 Indirect Production',
+                    'indirect_import': '🌐 Indirect Import',
+                    'value_added': '💎 Value Added',
+                    'jobcoeff': '👥 Job Creation'
+                }
+
+                selected_effects_grid = st.multiselect(
+                    "Select effect types to display:",
+                    options=list(effect_options_grid.keys()),
+                    default=['indirect_prod', 'value_added'],
+                    format_func=lambda x: effect_options_grid[x],
+                    key="grid_effect_selection"
+                )
+
+                if len(selected_effects_grid) < 1:
+                    st.warning("Please select at least one effect type.")
+                else:
+                    # Generate grid button
+                    if st.button("🎨 Generate Grid Comparison", type="primary", key="btn_grid_comparison"):
+                        with st.spinner("Creating grid comparison charts..."):
+                            # Get all years
+                            all_years_set = set()
+                            for effect_type in scenario_analyzer.aggregated_results.keys():
+                                if scenario_analyzer.aggregated_results[effect_type]:
+                                    all_years_set.update(scenario_analyzer.aggregated_results[effect_type].keys())
+                            all_years = sorted(all_years_set)
+
+                            # Create subplot grid
+                            n_effects = len(selected_effects_grid)
+                            n_scenarios = len(selected_scenarios_grid)
+
+                            # Determine grid layout (try to keep it balanced)
+                            if n_effects * n_scenarios <= 4:
+                                rows, cols = 2, 2
+                            elif n_effects * n_scenarios <= 6:
+                                rows, cols = 2, 3
+                            elif n_effects * n_scenarios <= 8:
+                                rows, cols = 2, 4
+                            else:
+                                rows, cols = 4, 4
+
+                            # Create subplots
+                            from plotly.subplots import make_subplots
+
+                            subplot_titles = []
+                            for effect in selected_effects_grid:
+                                for scenario in selected_scenarios_grid:
+                                    subplot_titles.append(f"{effect_options_grid[effect]}<br>{scenario}")
+
+                            fig = make_subplots(
+                                rows=rows,
+                                cols=cols,
+                                subplot_titles=subplot_titles[:rows*cols],
+                                vertical_spacing=0.12,
+                                horizontal_spacing=0.08
+                            )
+
+                            # Fill subplots
+                            plot_idx = 0
+                            for effect_idx, effect in enumerate(selected_effects_grid):
+                                for scenario_idx, scenario in enumerate(selected_scenarios_grid):
+                                    if plot_idx >= rows * cols:
+                                        break
+
+                                    row = (plot_idx // cols) + 1
+                                    col = (plot_idx % cols) + 1
+
+                                    # Get data for this scenario and effect
+                                    sheet_results = filter_results_by_scenario_sheet(scenario_analyzer, scenario)
+
+                                    y_values = []
+                                    for year in all_years:
+                                        if effect in sheet_results and year in sheet_results[effect]:
+                                            y_values.append(sheet_results[effect][year]['total_aggregate_impact'])
+                                        else:
+                                            y_values.append(0)
+
+                                    fig.add_trace(
+                                        go.Scatter(
+                                            x=all_years,
+                                            y=y_values,
+                                            mode='lines+markers',
+                                            name=f"{scenario}",
+                                            line=dict(width=2),
+                                            marker=dict(size=6),
+                                            showlegend=False
+                                        ),
+                                        row=row,
+                                        col=col
+                                    )
+
+                                    plot_idx += 1
+
+                            # Update layout
+                            fig.update_layout(
+                                title_text="Multi-Scenario Grid Comparison",
+                                height=300 * rows,
+                                showlegend=False
+                            )
+
+                            # Update axes
+                            for i in range(1, rows * cols + 1):
+                                fig.update_xaxes(title_text="Year", row=(i-1)//cols + 1, col=(i-1)%cols + 1)
+                                fig.update_yaxes(title_text="Impact", row=(i-1)//cols + 1, col=(i-1)%cols + 1)
+
+                            st.plotly_chart(fig, use_container_width=True)
+
+                            st.success("✅ Grid comparison generated successfully!")
 
 def main():
     # Sidebar - Show scenario file info
     st.sidebar.title("🏭 Input Output Analysis")
-    
+
     # Display currently loaded scenario file
     st.sidebar.markdown("---")
-    st.sidebar.markdown("### 📁 Current Scenario File")
-    
+    st.sidebar.markdown("### 📁 Data File")
+
     data_folder = Path("data")
-    scenario_files = sorted([f for f in data_folder.glob("scenario_*.xlsx")], reverse=True)
-    
+    data_file = data_folder / "Data_v10.xlsx"
+
     if 'current_scenario_file' in st.session_state:
         current_file = st.session_state.current_scenario_file
         st.sidebar.success(f"✅ {current_file}")
+
+        # Show loaded scenario sheets
+        if 'scenario_analyzer' in st.session_state:
+            analyzer = st.session_state.scenario_analyzer
+            if hasattr(analyzer, 'scenario_sheet_names'):
+                with st.sidebar.expander("📋 Loaded Scenario Sheets"):
+                    for sheet_name in analyzer.scenario_sheet_names:
+                        st.text(f"• {sheet_name}")
     else:
-        st.sidebar.warning("⚠️ No file loaded")
-        st.sidebar.info("Go to '🚀 Run Analysis' tab to load a scenario file")
-    
-    # Show available files
-    if scenario_files:
-        with st.sidebar.expander("📋 Available Files"):
-            for f in scenario_files:
-                is_current = st.session_state.get('current_scenario_file') == f.name
-                if is_current:
-                    st.success(f"● {f.name} (current)")
-                else:
-                    st.text(f"○ {f.name}")
-    
+        st.sidebar.warning("⚠️ No data loaded")
+        st.sidebar.info("Go to '🚀 Run Analysis' tab to load Data_v10.xlsx")
+
+    # Show data file status
+    if data_file.exists():
+        st.sidebar.markdown(f"**Data file:** `Data_v10.xlsx` ✅")
+    else:
+        st.sidebar.error("❌ Data_v10.xlsx not found")
+
     st.sidebar.markdown("---")
     st.sidebar.markdown("### 📍 Main Menu")
     main_option = st.sidebar.radio(
@@ -1457,21 +1827,24 @@ def main():
         st.title("📊 Analysis results")
 
         # Create tabs for different table views
-        tab1, tab2, tab3, tab4, tab5 = st.tabs(["🚀 Run Analysis", "🔗 Integrated", "⚡ H2", "📊 Total", "👤 Individual"])
+        tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["🚀 Run Analysis", "🔀 Scenario Comparison", "🔗 Integrated", "⚡ H2", "📊 Total", "👤 Individual"])
 
         with tab1:
             run_scenario_analysis()
 
         with tab2:
-            show_integrated_tables()
+            show_scenario_comparison()
 
         with tab3:
-            show_hydrogen_analysis()
+            show_integrated_tables()
 
         with tab4:
-            show_total_tables()
+            show_hydrogen_analysis()
 
         with tab5:
+            show_total_tables()
+
+        with tab6:
             show_individual_tables()
     else:  # Visualisation
         show_summary_visualizations()
