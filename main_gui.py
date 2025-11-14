@@ -11,15 +11,168 @@ from libs.io_analyzer import IOTableAnalyzer
 from libs.hydrogen_analyzer import HydrogenTableAnalyzer
 from libs.scenario_analyzer import ScenarioAnalyzer
 
-# Define the target years used throughout the analysis
-target_years = [2026, 2030, 2040, 2050]
-
-# Configure Streamlit page
+# Configure Streamlit page - must be first Streamlit command
 st.set_page_config(
     page_title="Hydrogen-reduced steel Input-Output Analysis",
     page_icon="🏭",
     layout="wide"
 )
+
+# ============================================================================
+# CONSTANTS
+# ============================================================================
+
+# Define the target years used throughout the analysis
+target_years = [2026, 2030, 2040, 2050]
+
+# Sector codes
+SECTOR_1610 = '1610'
+SECTOR_4506 = '4506'
+SECTOR_H2S = 'H2S'
+SECTOR_H2T = 'H2T'
+SECTOR_COAL_RENEWABLE = '1610+4506'
+SECTOR_H2_VALUE_CHAIN = 'H2S+H2T'
+SECTOR_TOTAL = '1610+4506+H2S+H2T'
+
+IO_SECTORS = [SECTOR_1610, SECTOR_4506]
+H2_SECTORS = [SECTOR_H2S, SECTOR_H2T]
+ALL_SECTORS = IO_SECTORS + H2_SECTORS
+
+# Effect type codes
+EFFECT_INDIRECT_PROD = 'indirect_prod'
+EFFECT_INDIRECT_IMPORT = 'indirect_import'
+EFFECT_VALUE_ADDED = 'value_added'
+EFFECT_JOB_COEFF = 'jobcoeff'
+EFFECT_DIRECT_EMPLOY = 'directemploycoeff'
+EFFECT_PRODUCTION_COEFF = 'productioncoeff'
+EFFECT_VALUE_ADDED_COEFF = 'valueaddedcoeff'
+
+IO_EFFECT_TYPES = [EFFECT_INDIRECT_PROD, EFFECT_INDIRECT_IMPORT, EFFECT_VALUE_ADDED,
+                   EFFECT_JOB_COEFF, EFFECT_DIRECT_EMPLOY]
+H2_EFFECT_TYPES = [EFFECT_PRODUCTION_COEFF, EFFECT_VALUE_ADDED_COEFF,
+                   EFFECT_JOB_COEFF, EFFECT_DIRECT_EMPLOY]
+
+# ============================================================================
+# HELPER FUNCTIONS
+# ============================================================================
+
+def get_effect_labels(sector_type='io', for_total=False):
+    """
+    Get effect type labels based on sector type.
+
+    Args:
+        sector_type: 'io', 'h2', or 'total'
+        for_total: If True, returns labels for total (coal+renewable+H2 value chain)
+
+    Returns:
+        Dictionary mapping effect codes to display labels
+    """
+    if for_total or sector_type == 'total':
+        return {
+            EFFECT_INDIRECT_PROD: '💰 Indirect Production (IO + H2 value chain)',
+            EFFECT_INDIRECT_IMPORT: '🌐 Indirect Import',
+            EFFECT_VALUE_ADDED: '💎 Value Added (IO + H2 value chain)',
+            EFFECT_DIRECT_EMPLOY: '👥 Job Creation (Coal+Renewable jobcoeff + H2 directemploycoeff)'
+        }
+    elif sector_type == 'h2':
+        return {
+            EFFECT_PRODUCTION_COEFF: '⚡ Production Coefficient (H2 value chain)',
+            EFFECT_VALUE_ADDED_COEFF: '💎 Value Added Coefficient (H2 value chain)',
+            EFFECT_JOB_COEFF: '👥 wage-inducing effect',
+            EFFECT_DIRECT_EMPLOY: '👔 Direct Employment'
+        }
+    else:  # io
+        return {
+            EFFECT_INDIRECT_PROD: '💰 Indirect Production',
+            EFFECT_INDIRECT_IMPORT: '🌐 Indirect Import',
+            EFFECT_VALUE_ADDED: '💎 Value Added',
+            EFFECT_JOB_COEFF: '👥 Job Creation',
+            EFFECT_DIRECT_EMPLOY: '👔 Direct Employment'
+        }
+
+def get_sector_labels():
+    """Get sector labels for display."""
+    return {
+        SECTOR_1610: '🏭 Sector 1610 (Coal)',
+        SECTOR_4506: '♻️ Sector 4506 (Renewable)',
+        SECTOR_COAL_RENEWABLE: '🔗 1610 + 4506 (Combined IO)',
+        SECTOR_H2S: '⚡ H2S (Hydrogen Storage)',
+        SECTOR_H2T: '🚛 H2T (Hydrogen Transport)',
+        SECTOR_TOTAL: '📊 coal+renewable+H2 value chain (All Sectors)'
+    }
+
+def calculate_combined_effect(scenario_analyzer, sheet_name, year, effect_type, sectors):
+    """
+    Calculate combined effect across multiple sectors.
+
+    Args:
+        scenario_analyzer: The scenario analyzer instance
+        sheet_name: Name of the scenario sheet
+        year: Year to calculate
+        effect_type: Type of effect to calculate
+        sectors: List of sector codes
+
+    Returns:
+        Total impact value
+    """
+    total_impact = 0
+    for sector_code in sectors:
+        sector_results = filter_results_by_sheet_and_sector(scenario_analyzer, sheet_name, sector_code)
+        if effect_type in sector_results and year in sector_results[effect_type]:
+            total_impact += sector_results[effect_type][year]['total_aggregate_impact']
+    return total_impact
+
+def calculate_total_sector_effect(scenario_analyzer, sheet_name, year, effect_type):
+    """
+    Calculate total sector effect for '1610+4506+H2S+H2T' with special handling.
+
+    This function properly combines effects from IO and H2 sectors:
+    - Indirect Production: IO's indirect_prod + H2's productioncoeff
+    - Value Added: IO's value_added + H2's valueaddedcoeff
+    - Job Creation: IO's jobcoeff + H2's directemploycoeff
+    - Other effects: Sum across all sectors
+
+    Args:
+        scenario_analyzer: The scenario analyzer instance
+        sheet_name: Name of the scenario sheet
+        year: Year to calculate
+        effect_type: Type of effect to calculate
+
+    Returns:
+        Total impact value
+    """
+    if effect_type == EFFECT_INDIRECT_PROD:
+        # Indirect Production = IO's indirect_prod + H2's productioncoeff
+        io_impact = calculate_combined_effect(scenario_analyzer, sheet_name, year,
+                                              EFFECT_INDIRECT_PROD, IO_SECTORS)
+        h2_impact = calculate_combined_effect(scenario_analyzer, sheet_name, year,
+                                              EFFECT_PRODUCTION_COEFF, H2_SECTORS)
+        return io_impact + h2_impact
+
+    elif effect_type == EFFECT_VALUE_ADDED:
+        # Value Added = IO's value_added + H2's valueaddedcoeff
+        io_impact = calculate_combined_effect(scenario_analyzer, sheet_name, year,
+                                              EFFECT_VALUE_ADDED, IO_SECTORS)
+        h2_impact = calculate_combined_effect(scenario_analyzer, sheet_name, year,
+                                              EFFECT_VALUE_ADDED_COEFF, H2_SECTORS)
+        return io_impact + h2_impact
+
+    elif effect_type == EFFECT_DIRECT_EMPLOY:
+        # Job Creation = IO's jobcoeff + H2's directemploycoeff
+        io_impact = calculate_combined_effect(scenario_analyzer, sheet_name, year,
+                                              EFFECT_JOB_COEFF, IO_SECTORS)
+        h2_impact = calculate_combined_effect(scenario_analyzer, sheet_name, year,
+                                              EFFECT_DIRECT_EMPLOY, H2_SECTORS)
+        return io_impact + h2_impact
+
+    else:
+        # Other effects: sum across all sectors
+        return calculate_combined_effect(scenario_analyzer, sheet_name, year,
+                                        effect_type, ALL_SECTORS)
+
+# ============================================================================
+# STREAMLIT CACHED FUNCTIONS
+# ============================================================================
 
 @st.cache_data
 def load_analyzer():
@@ -1319,14 +1472,7 @@ def show_scenario_comparison():
     st.markdown("---")
 
     # Select sector grouping
-    sector_options = {
-        '1610': '🏭 Coal',
-        '4506': '♻️ Renewable',
-        '1610+4506': '🔗 Coal+Renewable',
-        'H2S': '⚡ Hydrogen Storage',
-        'H2T': '🚛 Hydrogen Transportation',
-        '1610+4506+H2S+H2T': '📊 coal+renewable+H2 value chain'
-    }
+    sector_options = get_sector_labels()
 
     selected_sector_group = st.selectbox(
         "Select sector grouping:",
@@ -1335,33 +1481,13 @@ def show_scenario_comparison():
         key="scenario_comparison_sector"
     )
 
-    # Select effect type for comparison
-    # Filter effect options based on sector grouping
-    if selected_sector_group == '1610+4506+H2S+H2T':
-        # For Total: exclude H2-specific coefficients (already included in indirect_prod and value_added)
-        effect_options = {
-            'indirect_prod': '💰 Indirect Production',
-            'indirect_import': '🌐 Indirect Import',
-            'value_added': '💎 Value Added',
-            'directemploycoeff': '👔 Direct Employment'
-        }
-    elif selected_sector_group in ['H2S', 'H2T']:
-        # For H2 value chain sectors only: show H2-specific effects
-        effect_options = {
-            'productioncoeff': '⚡ Production Coefficient',
-            'valueaddedcoeff': '💎 Value Added Coefficient',
-            'jobcoeff': '👥 wage-inducing effect',
-            'directemploycoeff': '👔 Direct Employment'
-        }
+    # Select effect type for comparison based on sector grouping
+    if selected_sector_group == SECTOR_TOTAL:
+        effect_options = get_effect_labels(sector_type='total')
+    elif selected_sector_group in H2_SECTORS:
+        effect_options = get_effect_labels(sector_type='h2')
     else:
-        # For IO sectors: show IO-specific effects
-        effect_options = {
-            'indirect_prod': '💰 Indirect Production',
-            'indirect_import': '🌐 Indirect Import',
-            'value_added': '💎 Value Added',
-            'jobcoeff': '👥 Job Creation',
-            'directemploycoeff': '👔 Direct Employment'
-        }
+        effect_options = get_effect_labels(sector_type='io')
 
     selected_effect = st.selectbox(
         "Select effect type to compare:",
@@ -1387,64 +1513,24 @@ def show_scenario_comparison():
         row = {'Year': year}
 
         for sheet_name in scenario_sheets:
-            # Determine which sectors to include
-            if selected_sector_group in ['1610', '4506', 'H2S', 'H2T']:
+            # Determine which sectors to include and calculate impact
+            if selected_sector_group in [SECTOR_1610, SECTOR_4506, SECTOR_H2S, SECTOR_H2T]:
                 # Single sector
                 sector_results = filter_results_by_sheet_and_sector(scenario_analyzer, sheet_name, selected_sector_group)
-
                 if selected_effect in sector_results and year in sector_results[selected_effect]:
-                    total_impact = sector_results[selected_effect][year]['total_aggregate_impact']
-                    row[sheet_name] = total_impact
+                    row[sheet_name] = sector_results[selected_effect][year]['total_aggregate_impact']
                 else:
                     row[sheet_name] = 0
 
-            elif selected_sector_group == '1610+4506':
-                # Combined IO sectors
-                total_impact = 0
-                for sector_code in ['1610', '4506']:
-                    sector_results = filter_results_by_sheet_and_sector(scenario_analyzer, sheet_name, sector_code)
-                    if selected_effect in sector_results and year in sector_results[selected_effect]:
-                        total_impact += sector_results[selected_effect][year]['total_aggregate_impact']
-                row[sheet_name] = total_impact
+            elif selected_sector_group == SECTOR_COAL_RENEWABLE:
+                # Combined IO sectors (1610 + 4506)
+                row[sheet_name] = calculate_combined_effect(scenario_analyzer, sheet_name, year,
+                                                           selected_effect, IO_SECTORS)
 
-            elif selected_sector_group == '1610+4506+H2S+H2T':
-                # All sectors combined
-                if selected_effect == 'indirect_prod':
-                    # Indirect Production = IO's indirect_prod + H2's productioncoeff
-                    total_impact = 0
-                    # Get IO sectors' indirect_prod
-                    for sector_code in ['1610', '4506']:
-                        sector_results = filter_results_by_sheet_and_sector(scenario_analyzer, sheet_name, sector_code)
-                        if 'indirect_prod' in sector_results and year in sector_results['indirect_prod']:
-                            total_impact += sector_results['indirect_prod'][year]['total_aggregate_impact']
-                    # Get H2 sectors' productioncoeff
-                    for sector_code in ['H2S', 'H2T']:
-                        sector_results = filter_results_by_sheet_and_sector(scenario_analyzer, sheet_name, sector_code)
-                        if 'productioncoeff' in sector_results and year in sector_results['productioncoeff']:
-                            total_impact += sector_results['productioncoeff'][year]['total_aggregate_impact']
-                    row[sheet_name] = total_impact
-                elif selected_effect == 'value_added':
-                    # Value Added = IO's value_added + H2's valueaddedcoeff
-                    total_impact = 0
-                    # Get IO sectors' value_added
-                    for sector_code in ['1610', '4506']:
-                        sector_results = filter_results_by_sheet_and_sector(scenario_analyzer, sheet_name, sector_code)
-                        if 'value_added' in sector_results and year in sector_results['value_added']:
-                            total_impact += sector_results['value_added'][year]['total_aggregate_impact']
-                    # Get H2 sectors' valueaddedcoeff
-                    for sector_code in ['H2S', 'H2T']:
-                        sector_results = filter_results_by_sheet_and_sector(scenario_analyzer, sheet_name, sector_code)
-                        if 'valueaddedcoeff' in sector_results and year in sector_results['valueaddedcoeff']:
-                            total_impact += sector_results['valueaddedcoeff'][year]['total_aggregate_impact']
-                    row[sheet_name] = total_impact
-                else:
-                    # Other effects: sum across all sectors
-                    total_impact = 0
-                    for sector_code in ['1610', '4506', 'H2S', 'H2T']:
-                        sector_results = filter_results_by_sheet_and_sector(scenario_analyzer, sheet_name, sector_code)
-                        if selected_effect in sector_results and year in sector_results[selected_effect]:
-                            total_impact += sector_results[selected_effect][year]['total_aggregate_impact']
-                    row[sheet_name] = total_impact
+            elif selected_sector_group == SECTOR_TOTAL:
+                # All sectors combined with special logic for certain effects
+                row[sheet_name] = calculate_total_sector_effect(scenario_analyzer, sheet_name,
+                                                                year, selected_effect)
 
         comparison_data.append(row)
 
@@ -2268,7 +2354,7 @@ def show_summary_visualizations():
                         'indirect_prod': '💰 Indirect Production (IO + H2 value chain)',
                         'indirect_import': '🌐 Indirect Import',
                         'value_added': '💎 Value Added (IO + H2 value chain)',
-                        'directemploycoeff': '👔 Direct Employment'
+                        'directemploycoeff': '👥 Job Creation (Coal+Renewable jobcoeff + H2 directemploycoeff)'
                     }
                 elif selected_sector_grid in ['H2S', 'H2T']:
                     effect_options_grid = {
@@ -2334,40 +2420,11 @@ def show_summary_visualizations():
                                                 if effect in sector_results and year in sector_results[effect]:
                                                     total += sector_results[effect][year]['total_aggregate_impact']
                                             y_values.append(total)
-                                        elif selected_sector_grid == '1610+4506+H2S+H2T':
-                                            # All sectors combined
-                                            if effect == 'indirect_prod':
-                                                # Indirect Production = IO's indirect_prod + H2's productioncoeff
-                                                total = 0
-                                                for sector_code in ['1610', '4506']:
-                                                    sector_results = filter_results_by_sheet_and_sector(scenario_analyzer, scenario, sector_code)
-                                                    if 'indirect_prod' in sector_results and year in sector_results['indirect_prod']:
-                                                        total += sector_results['indirect_prod'][year]['total_aggregate_impact']
-                                                for sector_code in ['H2S', 'H2T']:
-                                                    sector_results = filter_results_by_sheet_and_sector(scenario_analyzer, scenario, sector_code)
-                                                    if 'productioncoeff' in sector_results and year in sector_results['productioncoeff']:
-                                                        total += sector_results['productioncoeff'][year]['total_aggregate_impact']
-                                                y_values.append(total)
-                                            elif effect == 'value_added':
-                                                # Value Added = IO's value_added + H2's valueaddedcoeff
-                                                total = 0
-                                                for sector_code in ['1610', '4506']:
-                                                    sector_results = filter_results_by_sheet_and_sector(scenario_analyzer, scenario, sector_code)
-                                                    if 'value_added' in sector_results and year in sector_results['value_added']:
-                                                        total += sector_results['value_added'][year]['total_aggregate_impact']
-                                                for sector_code in ['H2S', 'H2T']:
-                                                    sector_results = filter_results_by_sheet_and_sector(scenario_analyzer, scenario, sector_code)
-                                                    if 'valueaddedcoeff' in sector_results and year in sector_results['valueaddedcoeff']:
-                                                        total += sector_results['valueaddedcoeff'][year]['total_aggregate_impact']
-                                                y_values.append(total)
-                                            else:
-                                                # Other effects: sum across all sectors
-                                                total = 0
-                                                for sector_code in ['1610', '4506', 'H2S', 'H2T']:
-                                                    sector_results = filter_results_by_sheet_and_sector(scenario_analyzer, scenario, sector_code)
-                                                    if effect in sector_results and year in sector_results[effect]:
-                                                        total += sector_results[effect][year]['total_aggregate_impact']
-                                                y_values.append(total)
+                                        elif selected_sector_grid == SECTOR_TOTAL:
+                                            # All sectors combined with special handling
+                                            total = calculate_total_sector_effect(scenario_analyzer, scenario,
+                                                                                 year, effect)
+                                            y_values.append(total)
 
                                     # Create line name
                                     line_name = f"{effect_options_grid[effect]} - {scenario}"
