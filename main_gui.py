@@ -313,7 +313,7 @@ def run_scenario_analysis():
                 st.write(f"이러한 이유로 분석에 활용된 계수 종류가 산업연관표에 따라 상이할 수 있습니다.")
                 st.write(f"(예: 한국은행 연장표 - 생산유발효과, 수입유발효과, 부가가치유발효과, 고용유발효과,취업유발효과)")
                 st.write(f"(예: 최수빈 외 2인 (2023) 산업연관표 - 생산유발효과, 부가가치유발효과, 임금유발효과, 취업유발효과)")
-                st.write(f""Coal+Renewable+H2 value chain"의 "Job creation"은 "Coal+Renewable"의 "Job creation"과 "H2 value chain"의 "Direct Employment" 값을 합한 것입니다.")
+                st.write(f"**Coal+Renewable+H2 value chain**의 **Job creation**은 **Coal+Renewable**의 **Job creation**과 **H2 value chain**의 **Direct Employment** 값을 합한 것입니다.")
                 st.write(f"**Scenario sheets loaded:** {', '.join(scenario_analyzer.scenario_sheet_names)}")
 
                 effect_types = list(scenario_analyzer.aggregated_results.keys())
