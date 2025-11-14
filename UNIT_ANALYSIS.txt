@@ -1,0 +1,71 @@
+UNIT ANALYSIS - Tracing Through the Calculations
+================================================
+
+INPUT DATA (from Data_v11.xlsx):
+Example values: 4.205149e+06 = 4,205,149
+User says: These are in BILLION WON
+So: demand_change = 4,205,149 billion won
+
+CALCULATION PATH:
+=================
+
+1. IO SECTORS (1610, 4506):
+   - Coefficients are dimensionless (production multipliers)
+   - Calculation: result = coefficient × demand_change
+   - Result = coefficient × 4,205,149 billion won
+   - Result unit: BILLION WON
+
+2. IO JOBCOEFF:
+   - Coefficient unit: person/billion won
+   - Calculation: result = coefficient × demand_change
+   - Result = (person/billion won) × 4,205,149 billion won
+   - Result unit: PERSONS
+
+3. H2 PRODUCTIONCOEFF, VALUEADDEDCOEFF:
+   - Coefficients are dimensionless
+   - Calculation: result = coefficient × demand_change
+   - Result = coefficient × 4,205,149 billion won
+   - Result unit: BILLION WON
+
+4. H2 JOBCOEFF (wage-inducing):
+   - Coefficient is dimensionless (won/won ratio)
+   - Calculation: result = coefficient × demand_change
+   - Result = coefficient × 4,205,149 billion won
+   - Result unit: BILLION WON
+
+5. H2 DIRECTEMPLOYCOEFF:
+   - Coefficient unit: person/billion won
+   - Calculation (hydrogen_analyzer.py line 111): result = coefficient × (demand_change / 1000)
+   - Result = (person/billion won) × (4,205,149 billion won / 1000)
+   - Result = (person/billion won) × (4,205.149 trillion won)
+   - Result unit: person × 1000 = TOO MANY PERSONS ❌
+
+DISPLAY (visualisation.py line 71-72):
+=======================================
+For economic effects (indirect_prod, indirect_import, value_added):
+  divisor = 1000
+  display_value = raw_result / 1000
+
+If raw_result is in BILLION WON:
+  display_value = billion won / 1000 = MILLION WON ❌
+
+But we're labeling it as "Billion Won" ❌
+
+PROBLEM IDENTIFIED:
+===================
+1. If input is BILLION WON, display division by 1000 gives MILLION WON, not BILLION WON
+2. H2 directemploycoeff division by 1000 doesn't make sense
+
+POSSIBLE INTERPRETATIONS:
+==========================
+A) Input is actually in MILLION WON (not billion):
+   - demand_change = 4,205,149 million won
+   - Economic results = millions won
+   - Display = millions won / 1000 = billions won ✓
+   - H2 directemploy = (person/billion won) × (4,205,149 million won / 1000)
+                     = (person/billion won) × (4,205.149 billion won)
+                     = persons ✓
+
+B) Input is in BILLION WON but there's an error:
+   - Need to remove division by 1000 in visualization
+   - Need to fix H2 directemploycoeff calculation

@@ -67,9 +67,8 @@ class Visualization:
                 # Use integration method results
                 if effect_type in integrated_io:
                     years = sorted(integrated_io[effect_type].keys())
-                    # Don't divide job creation by 1000 - keep as persons
-                    divisor = 1000 if effect_type in ['indirect_prod', 'indirect_import', 'value_added'] else 1
-                    values = [integrated_io[effect_type][y]['total_impact'] / divisor for y in years]
+                    # Results are already in correct units from analyzers (Billion Won or Persons)
+                    values = [integrated_io[effect_type][y]['total_impact'] for y in years]
 
                     fig.add_trace(go.Scatter(
                         x=years, y=values, mode='lines+markers',
@@ -132,9 +131,8 @@ class Visualization:
                 # Use integration method results
                 if effect_type in integrated_h2:
                     years = sorted(integrated_h2[effect_type].keys())
-                    values = [integrated_h2[effect_type][y]['total_impact'] /
-                             (1000 if effect_type != 'directemploycoeff' else 1)
-                             for y in years]
+                    # Results are already in correct units from analyzers (Billion Won or Persons)
+                    values = [integrated_h2[effect_type][y]['total_impact'] for y in years]
 
                     fig.add_trace(go.Scatter(
                         x=years, y=values, mode='lines+markers',
@@ -180,12 +178,8 @@ class Visualization:
         for year in years:
             if scenario_key in self.scenario_analyzer.results[effect_type][year]:
                 total = self.scenario_analyzer.results[effect_type][year][scenario_key]['total_impact']
-                # Convert units
-                if effect_type in ['indirect_prod', 'indirect_import', 'value_added',
-                                  'productioncoeff', 'valueaddedcoeff', 'jobcoeff']:
-                    values.append(total / 1000)
-                else:
-                    values.append(total)
+                # Results are already in correct units from analyzers (Billion Won or Persons)
+                values.append(total)
             else:
                 values.append(0)
 
@@ -330,14 +324,18 @@ class Visualization:
             'valueaddedcoeff': 'Value Added'
         }
 
-        # Determine unit
-        if effect_type in ['jobcoeff']:
+        # Determine unit based on effect type
+        if effect_type in ['directemploycoeff']:
+            unit = 'Persons'
+        elif effect_type in ['jobcoeff']:
+            # IO jobcoeff = Job Creation (Persons), H2 jobcoeff = Wage-inducing (Billion Won)
             if scenario in ['H2S', 'H2T', 'H2S&H2T']:
                 unit = 'Billion Won'
             else:
-                unit = 'Person'
+                unit = 'Persons'
         else:
-            unit = 'Million Won'
+            # All economic effects now in Billion Won
+            unit = 'Billion Won'
 
         # Create colors based on positive/negative
         colors = ['#2ecc71' if x > 0 else '#e74c3c' for x in top_10['impact']]
@@ -357,9 +355,9 @@ class Visualization:
         ))
 
         fig.update_layout(
-            title=f'Top 10 Sectors - {scenario} | {effect_labels.get(effect_type, effect_type)} ({year})',
+            title=f'Top 10 Sectors - {scenario} | {effect_labels.get(effect_type, effect_type)} ({year})<br><sub>Unit: {unit}</sub>',
             xaxis_title=f'Impact ({unit})',
-            yaxis_title='',
+            yaxis_title='Sector',
             height=600,
             showlegend=False,
             template='plotly_white'
@@ -835,7 +833,7 @@ class Visualization:
             colorscale='RdBu_r',  # Red for positive, Blue for negative
             zmid=0,  # Center colormap at zero
             colorbar=dict(
-                title=dict(text="Impact Value", side="right"),
+                title=dict(text="Impact Value<br>(Billion Won or Persons)", side="right"),
                 tickformat=",",
             ),
             xgap=1,

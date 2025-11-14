@@ -18,9 +18,6 @@ st.set_page_config(
     layout="wide"
 )
 
-# ============================================================================
-# CONSTANTS
-# ============================================================================
 
 # Define the target years used throughout the analysis
 target_years = [2026, 2030, 2040, 2050]
@@ -55,6 +52,26 @@ H2_EFFECT_TYPES = [EFFECT_PRODUCTION_COEFF, EFFECT_VALUE_ADDED_COEFF,
 # ============================================================================
 # HELPER FUNCTIONS
 # ============================================================================
+
+def format_scenario_preview(df):
+    """
+    Format scenario dataframe for display with thousand separators.
+
+    Args:
+        df: DataFrame to format
+
+    Returns:
+        Formatted DataFrame with thousand separators for numeric columns
+    """
+    df_display = df.copy()
+
+    # Format numeric values with thousand separators
+    year_columns = [col for col in df_display.columns if isinstance(col, int)]
+    for col in year_columns:
+        df_display[col] = df_display[col].apply(lambda x: f"{x:,.2f}" if pd.notna(x) and isinstance(x, (int, float)) else x)
+
+    return df_display
+
 
 def get_effect_labels(sector_type='io', for_total=False):
     """
@@ -217,7 +234,9 @@ def show_scenarios():
             list(scenario_dataframes.keys())
         )
         if st.checkbox("Preview selected scenario file"):
-            st.dataframe(scenario_dataframes[file_to_preview])
+            formatted_df = format_scenario_preview(scenario_dataframes[file_to_preview])
+            st.caption("📊 Units: Million Won")
+            st.dataframe(formatted_df)
 
     # Let user pick one or more scenarios
     scenario_names = [f.name for f in scenario_files]
@@ -230,7 +249,9 @@ def show_scenarios():
     if st.checkbox("Preview scenario file content"):
         try:
             scenario_df = pd.read_excel(selected_path)
-            st.dataframe(scenario_df)
+            formatted_df = format_scenario_preview(scenario_df)
+            st.caption("📊 Units: Million Won")
+            st.dataframe(formatted_df)
         except Exception as e:
             st.error(f"Failed to load scenario file: {e}")
             return
@@ -240,25 +261,25 @@ def run_scenario_analysis():
     """Run scenario analysis and store results in session state."""
     st.title("🚀 Run Scenario Analysis")
     st.markdown("---")
-    st.markdown("Automatically analyze all scenarios from Data_v10.xlsx")
+    st.markdown("Automatically analyze all scenarios from Data_v11.xlsx")
 
     # Fixed data file
     data_folder = Path("data")
-    data_file = data_folder / "Data_v10.xlsx"
+    data_file = data_folder / "Data_v11.xlsx"
 
     # Check if file exists
     if not data_file.exists():
         st.error(f"❌ Data file not found: {data_file}")
-        st.info("Please ensure Data_v10.xlsx exists in the data folder.")
+        st.info("Please ensure Data_v11.xlsx exists in the data folder.")
         return
 
     # Show file info
-    st.info(f"📄 Data file: `Data_v10.xlsx`")
+    st.info(f"📄 Data file: `Data_v11.xlsx`")
 
     # Show which file is currently loaded
     if 'current_scenario_file' in st.session_state:
         current = st.session_state.current_scenario_file
-        if current == "Data_v10.xlsx":
+        if current == "Data_v11.xlsx":
             st.success(f"✅ Currently loaded: `{current}`")
         else:
             st.warning(f"⚠️ Different file loaded: `{current}`")
@@ -272,7 +293,9 @@ def run_scenario_analysis():
             for sheet_name in scenario_sheets:
                 with st.expander(f"📋 {sheet_name}"):
                     scenario_df = pd.read_excel(data_file, sheet_name=sheet_name)
-                    st.dataframe(scenario_df)
+                    formatted_df = format_scenario_preview(scenario_df)
+                    st.caption("📊 Units: Million Won")
+                    st.dataframe(formatted_df)
         except Exception as e:
             st.error(f"Failed to load data file: {e}")
 
@@ -291,9 +314,9 @@ def run_scenario_analysis():
 
     # Run analysis button
     if st.button("🚀 Run Complete Scenario Analysis", type="primary", use_container_width=True):
-        with st.spinner(f"Running scenario analysis for Data_v10.xlsx..."):
+        with st.spinner(f"Running scenario analysis for Data_v11.xlsx..."):
             try:
-                # Initialize scenario analyzer with Data_v10.xlsx
+                # Initialize scenario analyzer with Data_v11.xlsx
                 scenario_analyzer = ScenarioAnalyzer(scenarios_file=str(data_file))
 
                 # Run all scenarios
@@ -303,9 +326,9 @@ def run_scenario_analysis():
                 # Store results in session state
                 st.session_state.scenario_analyzer = scenario_analyzer
                 st.session_state.scenario_results = scenario_analyzer.aggregated_results
-                st.session_state.current_scenario_file = "Data_v10.xlsx"
+                st.session_state.current_scenario_file = "Data_v11.xlsx"
 
-                st.success(f"✅ Analysis complete for Data_v10.xlsx!")
+                st.success(f"✅ Analysis complete for Data_v11.xlsx!")
 
                 # Show summary of results
                 st.markdown("### 📊 Analysis Summary")
@@ -314,17 +337,10 @@ def run_scenario_analysis():
                 st.write(f"(예: 한국은행 연장표 - 생산유발효과, 수입유발효과, 부가가치유발효과, 고용유발효과,취업유발효과)")
                 st.write(f"(예: 최수빈 외 2인 (2023) 산업연관표 - 생산유발효과, 부가가치유발효과, 임금유발효과, 취업유발효과)")
                 st.write(f"**Coal+Renewable+H2 value chain**의 **Job creation**은 **Coal+Renewable**의 **Job creation**과 **H2 value chain**의 **Direct Employment** 값을 합한 것입니다.")
-                st.write(f"**Scenario sheets loaded:** {', '.join(scenario_analyzer.scenario_sheet_names)}")
-
-                effect_types = list(scenario_analyzer.aggregated_results.keys())
-                st.write(f"**Effect types analyzed:** {len(effect_types)}")
-                st.write(f"**Effect types:** {', '.join(effect_types)}")
-
+                st.write(f"1610: Coal, 4506: Renewable, H2S: Hydrogen Storage, H2T: Hydrogen Transport")
                 # Count years
-                years_set = set()
-                for effect_type in effect_types:
-                    years_set.update(scenario_analyzer.aggregated_results[effect_type].keys())
-                st.write(f"**Years covered:** {sorted(years_set)}")
+                # Get all effect types from the original results
+                effect_types = list(scenario_analyzer.aggregated_results.keys())
 
             except Exception as e:
                 st.error(f"Error running analysis: {str(e)}")
@@ -657,14 +673,15 @@ def show_integrated_tables():
 
     # SUMMARY TABLES SECTION
     st.markdown("### 📋 Summary Table (1610 + 4506)")
+    st.info("**Units:** Economic effects in Billion Won | Job Creation in Persons")
 
     summary_years = target_years
 
     # Define effect types to include in summary
     effect_columns = {
-        'indirect_prod': 'Indirect Production Impact (Million KRW)',
-        'indirect_import': 'Indirect Import Impact (Million KRW)',
-        'value_added': 'Value Added Impact (Million KRW)',
+        'indirect_prod': 'Indirect Production Impact',
+        'indirect_import': 'Indirect Import Impact',
+        'value_added': 'Value Added Impact',
         'jobcoeff': 'Job Creation Impact (Persons)'
     }
 
@@ -734,9 +751,9 @@ def show_integrated_tables():
 
     # Define all effect columns
     all_effect_columns = {
-        'indirect_prod': 'Indirect Production (Million KRW)',
-        'indirect_import': 'Indirect Import (Million KRW)',
-        'value_added': 'Value Added (Million KRW)',
+        'indirect_prod': 'Indirect Production',
+        'indirect_import': 'Indirect Import',
+        'value_added': 'Value Added',
         'jobcoeff': 'Job Creation (Persons)',
         'directemploycoeff': 'Direct Employment (Persons)'
     }
@@ -1024,15 +1041,16 @@ def show_hydrogen_analysis():
 
     # SUMMARY TABLES SECTION
     st.markdown("### 📋 Summary Tables (H2S + H2T)")
+    st.info("**Units:** Economic effects in Billion Won | Employment in Persons | jobcoeff = Wage-inducing effect (Billion Won)")
 
     summary_years = target_years
 
-    # Define hydrogen effect columns
+    # Define hydrogen effect columns with units
     h2_effect_columns = {
-        'productioncoeff': 'Indirect production (Million KRW)',
-        'valueaddedcoeff': 'Value-added creation (Million KRW)',
-        'jobcoeff': 'wage-inducing effect (Million KRW)',
-        'directemploycoeff': 'Direct Employment (Persons)'
+        'productioncoeff': 'Indirect production',
+        'valueaddedcoeff': 'Value-added creation',
+        'jobcoeff': 'Wage-inducing effect',
+        'directemploycoeff': 'Job Creation (Persons)'
     }
 
     # Build consolidated summary table
@@ -1072,12 +1090,12 @@ def show_hydrogen_analysis():
             all_years_set.update(results[effect_type].keys())
     all_years = sorted(all_years_set)
 
-    # Define hydrogen effect columns for full table
+    # Define hydrogen effect columns for full table with units
     h2_effect_columns = {
-        'productioncoeff': 'Production Coefficient (Million KRW)',
-        'valueaddedcoeff': 'Value Added Coefficient (Million KRW)',
-        'jobcoeff': 'wage-inducing effect (Million KRW)',
-        'directemploycoeff': 'Direct Employment (Persons)'
+        'productioncoeff': 'Production Coefficient',
+        'valueaddedcoeff': 'Value Added Coefficient',
+        'jobcoeff': 'Wage-inducing effect',
+        'directemploycoeff': 'Job Creation (Persons)'
     }
 
     # Build consolidated full table
@@ -1269,7 +1287,13 @@ def show_total_tables():
 
     # SUMMARY TABLES SECTION
     st.markdown("### 📋 Summary Tables")
-    st.markdown("Combined impacts: Indirect Production, Value Added, Job Creation")
+    st.info("""
+    **Units explanation:**
+    - Economic effects (Indirect Production, Import, Value Added): **Billion Won**
+    - Job Creation = Coal+Renewable jobcoeff (Persons) + H2 directemploycoeff (Persons): **Persons**
+
+    Note: H2's jobcoeff is wage-inducing effect (Billion Won), NOT job creation
+    """)
 
     summary_years = target_years
 
@@ -1284,13 +1308,13 @@ def show_total_tables():
             indirect_prod_val += results['indirect_prod'][year]['total_aggregate_impact']
         if 'productioncoeff' in available_effects and year in results['productioncoeff']:
             indirect_prod_val += results['productioncoeff'][year]['total_aggregate_impact']
-        row['Indirect Production (Million KRW)'] = indirect_prod_val
+        row['Indirect Production (Billion Won)'] = indirect_prod_val
 
         # 2. Indirect Import (IO only)
         if 'indirect_import' in available_effects and year in results['indirect_import']:
-            row['Indirect Import (Million KRW)'] = results['indirect_import'][year]['total_aggregate_impact']
+            row['Indirect Import (Billion Won)'] = results['indirect_import'][year]['total_aggregate_impact']
         else:
-            row['Indirect Import (Million KRW)'] = 0
+            row['Indirect Import (Billion Won)'] = 0
 
         # 3. Value Added = value_added + valueaddedcoeff (H2)
         value_added_val = 0
@@ -1298,7 +1322,7 @@ def show_total_tables():
             value_added_val += results['value_added'][year]['total_aggregate_impact']
         if 'valueaddedcoeff' in available_effects and year in results['valueaddedcoeff']:
             value_added_val += results['valueaddedcoeff'][year]['total_aggregate_impact']
-        row['Value Added (Million KRW)'] = value_added_val
+        row['Value Added (Billion Won)'] = value_added_val
 
         # 4. Job Creation = jobcoeff for 1610+4506 + directemploycoeff for H2S+H2T
         job_creation_val = 0
@@ -1497,7 +1521,7 @@ def show_scenario_comparison():
     )
 
     st.markdown("---")
-    st.markdown(f"### 📊 Comparison: {sector_options[selected_sector_group]} - {effect_options[selected_effect]}")
+    st.markdown(f"### 📊 Comparison: {sector_options[selected_sector_group]} - {effect_options[selected_effect]} (Billion Won | Persons for Job related effects)")
 
     # Get all years
     all_years_set = set()
@@ -1652,7 +1676,7 @@ def show_individual_tables():
 
     for i, (sector_code, sector_name) in enumerate(sectors.items()):
         with sector_tabs[i]:
-            st.markdown(f"### {sector_name}")
+            st.markdown(f"### {sector_name} (Billion Won)")
 
             # Filter results by scenario sheet and sector
             sector_results = filter_results_by_sheet_and_sector(scenario_analyzer, selected_sheet, sector_code)
@@ -1677,16 +1701,16 @@ def show_individual_tables():
             # Define effect columns based on sector type
             if sector_code in ['H2S', 'H2T']:
                 effect_columns = {
-                    'productioncoeff': 'Indirect Production (Million KRW)',
-                    'valueaddedcoeff': 'Value Added (Million KRW)',
-                    'jobcoeff': 'Job Creation (Million KRW)',
-                    'directemploycoeff': 'Direct Employment (Persons)'
+                    'productioncoeff': 'Indirect Production',
+                    'valueaddedcoeff': 'Value Added',
+                    'jobcoeff': 'Wage-inducing effect',
+                    'directemploycoeff': 'Job Creation (Persons)'
                 }
             else:  # 1610, 4506
                 effect_columns = {
-                    'indirect_prod': 'Indirect Production (Million KRW)',
-                    'indirect_import': 'Indirect Import (Million KRW)',
-                    'value_added': 'Value Added (Million KRW)',
+                    'indirect_prod': 'Indirect Production',
+                    'indirect_import': 'Indirect Import',
+                    'value_added': 'Value Added',
                     'jobcoeff': 'Job Creation (Persons)',
                     'directemploycoeff': 'Direct Employment (Persons)'
                 }
@@ -1919,10 +1943,16 @@ def show_summary_visualizations():
                                     marker=dict(size=7)
                                 ))
 
+                        # Determine unit based on effect type
+                        if io_effect in ['jobcoeff', 'directemploycoeff']:
+                            unit = "Persons"
+                        else:
+                            unit = "Billion Won"
+
                         fig.update_layout(
                             title=f"IO Table Trends - {selected_sheet_trends}",
                             xaxis_title="Year",
-                            yaxis_title="Impact Value",
+                            yaxis_title=f"Impact Value ({unit})",
                             hovermode='x unified',
                             height=500
                         )
@@ -2005,10 +2035,16 @@ def show_summary_visualizations():
                                     marker=dict(size=7)
                                 ))
 
+                        # Determine unit based on effect type
+                        if h2_effect == 'directemploycoeff':
+                            unit = "Persons"
+                        else:
+                            unit = "Billion Won"
+
                         fig.update_layout(
                             title=f"Hydrogen Trends - {selected_sheet_trends}",
                             xaxis_title="Year",
-                            yaxis_title="Impact Value",
+                            yaxis_title=f"Impact Value ({unit})",
                             hovermode='x unified',
                             height=500
                         )
@@ -2066,19 +2102,19 @@ def show_summary_visualizations():
             if sector_option in ['H2S', 'H2T', 'H2S+H2T']:
                 effect_options = ['productioncoeff', 'valueaddedcoeff', 'jobcoeff', 'directemploycoeff']
                 effect_labels = {
-                    'productioncoeff': '⚡ Indirect Production (H2 value chain)',
-                    'valueaddedcoeff': '💎 Value Added (H2 value chain)',
-                    'jobcoeff': '👥 wage-inducing effect',
-                    'directemploycoeff': '👔 Direct Employment'
+                    'productioncoeff': '⚡ Indirect Production (Billion Won)',
+                    'valueaddedcoeff': '💎 Value Added (Billion Won)',
+                    'jobcoeff': '👥 Wage-inducing effect (Billion Won)',
+                    'directemploycoeff': '👔 Job Creation (Persons)'
                 }
             else:
                 effect_options = ['indirect_prod', 'indirect_import', 'value_added', 'jobcoeff', 'directemploycoeff']
                 effect_labels = {
-                    'indirect_prod': '💰 Indirect Production',
-                    'indirect_import': '🌐 Indirect Import',
-                    'value_added': '💎 Value Added',
-                    'jobcoeff': '👥 Job Creation',
-                    'directemploycoeff': '👔 Direct Employment'
+                    'indirect_prod': '💰 Indirect Production (Billion Won)',
+                    'indirect_import': '🌐 Indirect Import (Billion Won)',
+                    'value_added': '💎 Value Added (Billion Won)',
+                    'jobcoeff': '👥 Job Creation (Persons)',
+                    'directemploycoeff': '👔 Direct Employment (Persons)'
                 }
 
             sector_effect = st.selectbox(
@@ -2141,11 +2177,14 @@ def show_summary_visualizations():
                         sector_names = [imp['sector_name'][:30] for imp in top_10]  # Truncate long names
                         impact_values = [imp['total_impact'] for imp in top_10]
 
+                        # Create colors based on positive/negative values
+                        colors = ['#2ecc71' if val > 0 else '#e74c3c' for val in impact_values]
+
                         fig.add_trace(go.Bar(
                             y=sector_names,
                             x=impact_values,
                             orientation='h',
-                            marker=dict(color='#1f77b4'),
+                            marker=dict(color=colors),
                             text=[f"{val:,.0f}" for val in impact_values],
                             textposition='auto'
                         ))
@@ -2189,13 +2228,13 @@ def show_summary_visualizations():
             sheet_results = filter_results_by_scenario_sheet(scenario_analyzer, selected_sheet_heatmap)
 
             effect_labels = {
-                'indirect_prod': '💰 Indirect Production',
-                'indirect_import': '🌐 Indirect Import',
-                'value_added': '💎 Value Added',
-                'jobcoeff': '👥 Job Creation',
-                'directemploycoeff': '👔 Direct Employment',
-                'productioncoeff': '⚡ Production Coeff (H2 value chain)',
-                'valueaddedcoeff': '💎 Value Added Coeff (H2 value chain)'
+                'indirect_prod': '💰 Indirect Production (Billion Won)',
+                'indirect_import': '🌐 Indirect Import (Billion Won)',
+                'value_added': '💎 Value Added (Billion Won)',
+                'jobcoeff': '👥 Job Creation (Persons)',
+                'directemploycoeff': '👔 Direct Employment (Persons)',
+                'productioncoeff': '⚡ Production Coeff (Billion Won)',
+                'valueaddedcoeff': '💎 Value Added Coeff (Billion Won)'
             }
 
             available_effects = [
@@ -2452,11 +2491,24 @@ def show_summary_visualizations():
 
                                     line_idx += 1
 
+                            # Determine unit based on selected effects
+                            # If all employment effects, use Persons; if all economic, use Billion Won; else show both
+                            employment_effects = {'jobcoeff', 'directemploycoeff'}
+                            economic_effects = {'indirect_prod', 'indirect_import', 'value_added', 'productioncoeff', 'valueaddedcoeff'}
+
+                            selected_effects_set = set(selected_effects_grid)
+                            if selected_effects_set.issubset(employment_effects):
+                                y_label = "Impact Value (Persons)"
+                            elif selected_effects_set.issubset(economic_effects) or (selected_effects_set == {'jobcoeff'} and selected_sector_grid in ['H2S', 'H2T']):
+                                y_label = "Impact Value (Billion Won)"
+                            else:
+                                y_label = "Impact Value (Billion Won / Persons)"
+
                             # Update layout
                             fig.update_layout(
                                 title="Multi-Scenario Effect Comparison",
                                 xaxis_title="Year",
-                                yaxis_title="Impact Value",
+                                yaxis_title=y_label,
                                 hovermode='x unified',
                                 height=600,
                                 legend=dict(
@@ -2484,7 +2536,7 @@ def main():
     st.sidebar.markdown("### 📁 Data File")
 
     data_folder = Path("data")
-    data_file = data_folder / "Data_v10.xlsx"
+    data_file = data_folder / "Data_v11.xlsx"
 
     if 'current_scenario_file' in st.session_state:
         current_file = st.session_state.current_scenario_file
@@ -2499,13 +2551,13 @@ def main():
                         st.text(f"• {sheet_name}")
     else:
         st.sidebar.warning("⚠️ No data loaded")
-        st.sidebar.info("Go to 'Run Analysis' menu to load Data_v10.xlsx")
+        st.sidebar.info("Go to 'Run Analysis' menu to load Data_v11.xlsx")
 
     # Show data file status
     if data_file.exists():
-        st.sidebar.markdown(f"**Data file:** `Data_v10.xlsx` ✅")
+        st.sidebar.markdown(f"**Data file:** `Data_v11.xlsx` ✅")
     else:
-        st.sidebar.error("❌ Data_v10.xlsx not found")
+        st.sidebar.error("❌ Data_v11.xlsx not found")
 
     st.sidebar.markdown("---")
     st.sidebar.markdown("### 📍 Main Menu")
