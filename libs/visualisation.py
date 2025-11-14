@@ -73,7 +73,7 @@ class Visualization:
 
                     fig.add_trace(go.Scatter(
                         x=years, y=values, mode='lines+markers',
-                        name='1610 & 4506', line=dict(width=3), marker=dict(size=8)
+                        name='coal+renewable', line=dict(width=3), marker=dict(size=8)
                     ))
             else:
                 # Extract from stored results
@@ -116,7 +116,7 @@ class Visualization:
         effect_info = {
             'productioncoeff': {'label': 'Indirect Production', 'unit': 'Billion Won'},
             'valueaddedcoeff': {'label': 'Value Added', 'unit': 'Billion Won'},
-            'jobcoeff': {'label': 'Job Creation', 'unit': 'Billion Won'},
+            'jobcoeff': {'label': 'wage-inducing effect', 'unit': 'Billion Won'},
             'directemploycoeff': {'label': 'Direct Employment', 'unit': 'Person'}
         }
 
@@ -138,7 +138,7 @@ class Visualization:
 
                     fig.add_trace(go.Scatter(
                         x=years, y=values, mode='lines+markers',
-                        name='H2S & H2T', line=dict(width=3), marker=dict(size=8)
+                        name='H2 value chain', line=dict(width=3), marker=dict(size=8)
                     ))
             else:
                 # Extract from stored results
@@ -230,7 +230,7 @@ class Visualization:
         h2_labels = {
             'productioncoeff': 'indirect_production',
             'valueaddedcoeff': 'value_added',
-            'jobcoeff': 'job_creation',
+            'jobcoeff': 'wage_inducing_effect',
             'directemploycoeff': 'direct_employment'
         }
 

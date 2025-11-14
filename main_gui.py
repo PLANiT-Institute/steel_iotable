@@ -156,6 +156,11 @@ def run_scenario_analysis():
 
                 # Show summary of results
                 st.markdown("### 📊 Analysis Summary")
+                st.write(f"Coal&Renewable(한국은행 2023년 연장표), 그리고 H2(최수빈 외 2인, 2023)는 분석에 활용한 산업연관표가 상이하기 때문에 구분해서 분석하고 결과를 도출하는 것을 권장합니다.")
+                st.write(f"이러한 이유로 분석에 활용된 계수 종류가 산업연관표에 따라 상이할 수 있습니다.")
+                st.write(f"(예: 한국은행 연장표 - 생산유발효과, 수입유발효과, 부가가치유발효과, 고용유발효과,취업유발효과)")
+                st.write(f"(예: 최수빈 외 2인 (2023) 산업연관표 - 생산유발효과, 부가가치유발효과, 임금유발효과, 취업유발효과)")
+                st.write(f""Coal+Renewable+H2 value chain"의 "Job creation"은 "Coal+Renewable"의 "Job creation"과 "H2 value chain"의 "Direct Employment" 값을 합한 것입니다.")
                 st.write(f"**Scenario sheets loaded:** {', '.join(scenario_analyzer.scenario_sheet_names)}")
 
                 effect_types = list(scenario_analyzer.aggregated_results.keys())
@@ -410,7 +415,7 @@ def filter_results_by_sectors(scenario_analyzer, sector_list):
 
 def show_integrated_tables():
     """Display integrated tables combining IO sectors 1610 and 4506."""
-    st.subheader("🔗 Integrated Table Analysis")
+    st.subheader("🔗 coal+renewable Table Analysis")
 
     # Check if scenario analysis has been run
     if not st.session_state.get('scenario_results') or not st.session_state.get('scenario_analyzer'):
@@ -568,8 +573,8 @@ def show_integrated_tables():
         'indirect_prod': '💰 Indirect Production Effects',
         'indirect_import': '🌐 Indirect Import Effects',
         'value_added': '💎 Value Added Effects',
-        'productioncoeff': '⚡ Production Coefficient (H2)',
-        'valueaddedcoeff': '💎 Value Added Coefficient (H2)',
+        'productioncoeff': '⚡ Production Coefficient (H2 value chain)',
+        'valueaddedcoeff': '💎 Value Added Coefficient (H2 value chain)',
         'jobcoeff': '👥 Job Creation Effects',
         'directemploycoeff': '👔 Direct Employment Effects'
     }
@@ -873,7 +878,7 @@ def show_hydrogen_analysis():
     h2_effect_columns = {
         'productioncoeff': 'Indirect production (Million KRW)',
         'valueaddedcoeff': 'Value-added creation (Million KRW)',
-        'jobcoeff': 'Job Creation (Million KRW)',
+        'jobcoeff': 'wage-inducing effect (Million KRW)',
         'directemploycoeff': 'Direct Employment (Persons)'
     }
 
@@ -918,7 +923,7 @@ def show_hydrogen_analysis():
     h2_effect_columns = {
         'productioncoeff': 'Production Coefficient (Million KRW)',
         'valueaddedcoeff': 'Value Added Coefficient (Million KRW)',
-        'jobcoeff': 'Job Creation (Million KRW)',
+        'jobcoeff': 'wage-inducing effect (Million KRW)',
         'directemploycoeff': 'Direct Employment (Persons)'
     }
 
@@ -954,12 +959,12 @@ def show_hydrogen_analysis():
 
             buffer = BytesIO()
             with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-                full_df.to_excel(writer, sheet_name='H2 Full Data', index=False)
+                full_df.to_excel(writer, sheet_name='H2 value chain Full Data', index=False)
 
             buffer.seek(0)
 
             st.download_button(
-                label=f"📥 Download H2 Full Table (Excel)",
+                label=f"📥 Download H2 value chain Full Table (Excel)",
                 data=buffer,
                 file_name=f"h2_full_consolidated_table.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -969,7 +974,7 @@ def show_hydrogen_analysis():
             # Fallback to CSV
             csv = full_df.to_csv(index=False, encoding='utf-8-sig')
             st.download_button(
-                label=f"📥 Download H2 Full Table (CSV)",
+                label=f"📥 Download H2 value chain Full Table (CSV)",
                 data=csv,
                 file_name=f"h2_full_consolidated_table.csv",
                 mime="text/csv",
@@ -1067,8 +1072,8 @@ def filter_and_group_by_code_h(scenario_analyzer, sector_list):
 
 
 def show_total_tables():
-    """Display total tables with 1610 + 4506 + H2 grouped by code_h categories."""
-    st.subheader("📊 Total Table Summary (Coal+Renewable+H2)")
+    """Display total tables with 1610 + 4506 + H2 value chain grouped by code_h categories."""
+    st.subheader("📊 coal+renewable+H2 value chain Table Summary")
 
     # Check if scenario analysis has been run
     if not st.session_state.get('scenario_results') or not st.session_state.get('scenario_analyzer'):
@@ -1191,8 +1196,8 @@ def show_total_tables():
         'indirect_prod': '💰 Indirect Production Effects',
         'indirect_import': '🌐 Indirect Import Effects',
         'value_added': '💎 Value Added Effects',
-        'productioncoeff': '⚡ Production Coefficient (H2)',
-        'valueaddedcoeff': '💎 Value Added Coefficient (H2)',
+        'productioncoeff': '⚡ Production Coefficient (H2 value chain)',
+        'valueaddedcoeff': '💎 Value Added Coefficient (H2 value chain)',
         'directemploycoeff': '👔 Direct Employment Effects'
     }
 
@@ -1315,12 +1320,12 @@ def show_scenario_comparison():
 
     # Select sector grouping
     sector_options = {
-        '1610': '🏭 Sector 1610 (Coal)',
-        '4506': '♻️ Sector 4506 (Renewable)',
-        '1610+4506': '🔗 1610 + 4506 (Combined IO)',
-        'H2S': '⚡ H2S (Hydrogen Storage)',
-        'H2T': '🚛 H2T (Hydrogen Transport)',
-        '1610+4506+H2S+H2T': '📊 Total (All Sectors)'
+        '1610': '🏭 Coal',
+        '4506': '♻️ Renewable',
+        '1610+4506': '🔗 Coal+Renewable',
+        'H2S': '⚡ Hydrogen Storage',
+        'H2T': '🚛 Hydrogen Transportation',
+        '1610+4506+H2S+H2T': '📊 coal+renewable+H2 value chain'
     }
 
     selected_sector_group = st.selectbox(
@@ -1335,17 +1340,17 @@ def show_scenario_comparison():
     if selected_sector_group == '1610+4506+H2S+H2T':
         # For Total: exclude H2-specific coefficients (already included in indirect_prod and value_added)
         effect_options = {
-            'indirect_prod': '💰 Indirect Production (IO + H2)',
+            'indirect_prod': '💰 Indirect Production',
             'indirect_import': '🌐 Indirect Import',
-            'value_added': '💎 Value Added (IO + H2)',
+            'value_added': '💎 Value Added',
             'directemploycoeff': '👔 Direct Employment'
         }
     elif selected_sector_group in ['H2S', 'H2T']:
-        # For H2 sectors only: show H2-specific effects
+        # For H2 value chain sectors only: show H2-specific effects
         effect_options = {
-            'productioncoeff': '⚡ Production Coefficient (H2)',
-            'valueaddedcoeff': '💎 Value Added Coefficient (H2)',
-            'jobcoeff': '👥 Job Creation',
+            'productioncoeff': '⚡ Production Coefficient',
+            'valueaddedcoeff': '💎 Value Added Coefficient',
+            'jobcoeff': '👥 wage-inducing effect',
             'directemploycoeff': '👔 Direct Employment'
         }
     else:
@@ -1848,9 +1853,9 @@ def show_summary_visualizations():
                     "Select Effect Type",
                     options=['productioncoeff', 'valueaddedcoeff', 'jobcoeff', 'directemploycoeff'],
                     format_func=lambda x: {
-                        'productioncoeff': '⚡ Indirect Production (H2)',
-                        'valueaddedcoeff': '💎 Value Added (H2)',
-                        'jobcoeff': '👥 Job Creation',
+                        'productioncoeff': '⚡ Indirect Production (H2 value chain)',
+                        'valueaddedcoeff': '💎 Value Added (H2 value chain)',
+                        'jobcoeff': '👥 wage-inducing effect',
                         'directemploycoeff': '👔 Direct Employment'
                     }[x],
                     key="h2_trend_effect"
@@ -1863,7 +1868,7 @@ def show_summary_visualizations():
                     key="h2_trend_sectors"
                 )
 
-                if st.button("Generate H2 Trends", key="btn_h2_trends"):
+                if st.button("Generate H2 value chain Trends", key="btn_h2_trends"):
                     try:
                         # Get all years
                         all_years_set = set()
@@ -1924,7 +1929,7 @@ def show_summary_visualizations():
 
                         st.plotly_chart(fig, use_container_width=True)
                     except Exception as e:
-                        st.error(f"Error generating H2 trends: {e}")
+                        st.error(f"Error generating H2 value chain trends: {e}")
 
     # TAB 2: Sector Maps
     with viz_tabs[1]:
@@ -1975,9 +1980,9 @@ def show_summary_visualizations():
             if sector_option in ['H2S', 'H2T', 'H2S+H2T']:
                 effect_options = ['productioncoeff', 'valueaddedcoeff', 'jobcoeff', 'directemploycoeff']
                 effect_labels = {
-                    'productioncoeff': '⚡ Indirect Production (H2)',
-                    'valueaddedcoeff': '💎 Value Added (H2)',
-                    'jobcoeff': '👥 Job Creation',
+                    'productioncoeff': '⚡ Indirect Production (H2 value chain)',
+                    'valueaddedcoeff': '💎 Value Added (H2 value chain)',
+                    'jobcoeff': '👥 wage-inducing effect',
                     'directemploycoeff': '👔 Direct Employment'
                 }
             else:
@@ -2103,8 +2108,8 @@ def show_summary_visualizations():
                 'value_added': '💎 Value Added',
                 'jobcoeff': '👥 Job Creation',
                 'directemploycoeff': '👔 Direct Employment',
-                'productioncoeff': '⚡ Production Coeff (H2)',
-                'valueaddedcoeff': '💎 Value Added Coeff (H2)'
+                'productioncoeff': '⚡ Production Coeff (H2 value chain)',
+                'valueaddedcoeff': '💎 Value Added Coeff (H2 value chain)'
             }
 
             available_effects = [
@@ -2236,7 +2241,7 @@ def show_summary_visualizations():
                 '1610+4506': '🔗 1610 + 4506 (Combined IO)',
                 'H2S': '⚡ H2S (Hydrogen Storage)',
                 'H2T': '🚛 H2T (Hydrogen Transport)',
-                '1610+4506+H2S+H2T': '📊 Total (All Sectors)'
+                '1610+4506+H2S+H2T': '📊 coal+renewable+H2 value chain (All Sectors)'
             }
 
             selected_sector_grid = st.selectbox(
@@ -2260,16 +2265,16 @@ def show_summary_visualizations():
                 # Select effect types to display based on sector grouping
                 if selected_sector_grid == '1610+4506+H2S+H2T':
                     effect_options_grid = {
-                        'indirect_prod': '💰 Indirect Production (IO + H2)',
+                        'indirect_prod': '💰 Indirect Production (IO + H2 value chain)',
                         'indirect_import': '🌐 Indirect Import',
-                        'value_added': '💎 Value Added (IO + H2)',
+                        'value_added': '💎 Value Added (IO + H2 value chain)',
                         'directemploycoeff': '👔 Direct Employment'
                     }
                 elif selected_sector_grid in ['H2S', 'H2T']:
                     effect_options_grid = {
-                        'productioncoeff': '⚡ Production Coefficient (H2)',
-                        'valueaddedcoeff': '💎 Value Added Coefficient (H2)',
-                        'jobcoeff': '👥 Job Creation',
+                        'productioncoeff': '⚡ Production Coefficient (H2 value chain)',
+                        'valueaddedcoeff': '💎 Value Added Coefficient (H2 value chain)',
+                        'jobcoeff': '👥 wage-inducing effect',
                         'directemploycoeff': '👔 Direct Employment'
                     }
                 else:
@@ -2462,7 +2467,7 @@ def main():
         st.title("📊 Analysis results")
 
         # Create tabs for different table views
-        tab1, tab2, tab3, tab4, tab5 = st.tabs(["🔀 Scenario Comparison", "🔗 Integrated", "⚡ H2", "📊 Total", "👤 Individual"])
+        tab1, tab2, tab3, tab4, tab5 = st.tabs(["🔀 Scenario Comparison", "🔗 coal+renewable", "⚡ H2 value chain", "📊 coal+renewable+H2 value chain", "👤 Individual"])
 
         with tab1:
             show_scenario_comparison()
