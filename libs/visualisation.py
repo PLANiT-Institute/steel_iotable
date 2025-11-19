@@ -1019,40 +1019,480 @@ class Visualization:
         plt.savefig(output_path, bbox_inches='tight', dpi=150)
         plt.show()
 
+    @staticmethod
+    def create_regional_comparison_bar(
+        regional_analyzer,
+        effect_type: str,
+        year: int,
+        show_by_scenario: bool = False,
+        show_fig: bool = True,
+        output_path: str = None
+    ):
+        """
+        Create bar chart comparing regional impacts for a specific effect type and year.
+
+        Args:
+            regional_analyzer: RegionalScenarioAnalyzer instance with results
+            effect_type: Effect type (e.g., 'indirect_prod', 'jobcoeff')
+            year: Year to analyze
+            show_by_scenario: If True, show breakdown by scenario; if False, show combined totals
+            show_fig: Whether to display the figure
+            output_path: Path to save the HTML file (optional)
+
+        Returns:
+            Plotly Figure object
+        """
+        # Effect type labels and units
+        effect_info = {
+            'indirect_prod': {'label': 'Indirect Production', 'unit': 'Billion Won'},
+            'indirect_import': {'label': 'Import', 'unit': 'Billion Won'},
+            'value_added': {'label': 'Value Added', 'unit': 'Billion Won'},
+            'jobcoeff': {'label': 'Job Creation', 'unit': 'Persons'},
+            'directemploycoeff': {'label': 'Direct Employment', 'unit': 'Persons'}
+        }
+
+        effect_label = effect_info.get(effect_type, {}).get('label', effect_type)
+        unit = effect_info.get(effect_type, {}).get('unit', 'Units')
+
+        if show_by_scenario:
+            # Get regional comparison by scenario (shows individual scenarios)
+            df = regional_analyzer.get_regional_comparison_by_scenario_df(
+                effect_type=effect_type,
+                year=year
+            )
+
+            if df.empty:
+                print(f"No data available for {effect_type} in year {year}")
+                return None
+
+            # For jobcoeff, we have sector-level detail
+            if effect_type == 'jobcoeff':
+                # Aggregate by region and scenario
+                df_agg = df.groupby(['region', 'scenario'])['total_impact'].first().reset_index()
+            else:
+                df_agg = df.copy()
+
+            # Create grouped bar chart
+            fig = go.Figure()
+
+            scenarios = df_agg['scenario'].unique()
+            regions = sorted(df_agg['region'].unique())
+
+            for scenario in scenarios:
+                scenario_data = df_agg[df_agg['scenario'] == scenario]
+                values = [
+                    scenario_data[scenario_data['region'] == region]['total_impact'].values[0]
+                    if len(scenario_data[scenario_data['region'] == region]) > 0 else 0
+                    for region in regions
+                ]
+
+                fig.add_trace(go.Bar(
+                    name=scenario,
+                    x=regions,
+                    y=values,
+                    text=[f'{v:,.0f}' for v in values],
+                    textposition='outside',
+                    hovertemplate='<b>%{x}</b><br>Scenario: ' + scenario + '<br>Impact: %{y:,.0f}<extra></extra>'
+                ))
+
+            title_text = f'Regional Comparison by Scenario<br><sub>{effect_label} | Year {year}</sub>'
+
+        else:
+            # Get aggregated regional comparison (combined totals)
+            df = regional_analyzer.get_regional_comparison_df(
+                effect_type=effect_type,
+                year=year
+            )
+
+            if df.empty:
+                print(f"No data available for {effect_type} in year {year}")
+                return None
+
+            # Sort by total impact
+            df = df.sort_values('total_impact', ascending=True)
+
+            # Create colors based on positive/negative
+            colors = ['#2ecc71' if x > 0 else '#e74c3c' for x in df['total_impact']]
+
+            # Create horizontal bar chart
+            fig = go.Figure()
+
+            fig.add_trace(go.Bar(
+                y=df['region'],
+                x=df['total_impact'],
+                orientation='h',
+                marker=dict(color=colors),
+                text=[f'{v:,.0f}' for v in df['total_impact']],
+                textposition='outside',
+                hovertemplate='<b>%{y}</b><br>Total Impact: %{x:,.0f}<extra></extra>'
+            ))
+
+            title_text = f'Regional Comparison (Combined Total)<br><sub>{effect_label} | Year {year}</sub>'
+
+        # Update layout
+        fig.update_layout(
+            title=dict(
+                text=title_text,
+                x=0.5,
+                xanchor='center',
+                font=dict(size=16)
+            ),
+            xaxis_title=f'{effect_label} ({unit})' if not show_by_scenario else 'Region',
+            yaxis_title='Region' if not show_by_scenario else f'{effect_label} ({unit})',
+            height=600,
+            template='plotly_white',
+            showlegend=show_by_scenario,
+            legend=dict(
+                orientation="h",
+                yanchor="bottom",
+                y=1.02,
+                xanchor="center",
+                x=0.5
+            ) if show_by_scenario else None,
+            barmode='group' if show_by_scenario else None
+        )
+
+        # Save to HTML if path provided
+        if output_path:
+            fig.write_html(output_path)
+            print(f"Regional comparison chart saved to {output_path}")
+
+        if show_fig:
+            fig.show()
+
+        return fig
+
+    @staticmethod
+    def create_regional_time_series(
+        regional_analyzer,
+        effect_type: str,
+        regions: List[str] = None,
+        show_fig: bool = True,
+        output_path: str = None
+    ):
+        """
+        Create time series chart showing regional impacts over time.
+
+        Args:
+            regional_analyzer: RegionalScenarioAnalyzer instance with results
+            effect_type: Effect type (e.g., 'indirect_prod', 'jobcoeff')
+            regions: List of regions to display (None = all regions)
+            show_fig: Whether to display the figure
+            output_path: Path to save the HTML file (optional)
+
+        Returns:
+            Plotly Figure object
+        """
+        # Effect type labels and units
+        effect_info = {
+            'indirect_prod': {'label': 'Indirect Production', 'unit': 'Billion Won'},
+            'indirect_import': {'label': 'Import', 'unit': 'Billion Won'},
+            'value_added': {'label': 'Value Added', 'unit': 'Billion Won'},
+            'jobcoeff': {'label': 'Job Creation', 'unit': 'Persons'},
+            'directemploycoeff': {'label': 'Direct Employment', 'unit': 'Persons'}
+        }
+
+        effect_label = effect_info.get(effect_type, {}).get('label', effect_type)
+        unit = effect_info.get(effect_type, {}).get('unit', 'Units')
+
+        # Get all regions time series
+        df = regional_analyzer.get_all_regions_time_series(effect_type=effect_type)
+
+        if df.empty:
+            print(f"No data available for {effect_type}")
+            return None
+
+        # If regions specified, filter to those
+        if regions is None:
+            regions = [col for col in df.columns if col != 'year']
+
+        # Create line chart
+        fig = go.Figure()
+
+        for region in regions:
+            if region in df.columns:
+                fig.add_trace(go.Scatter(
+                    x=df['year'],
+                    y=df[region],
+                    mode='lines+markers',
+                    name=region,
+                    line=dict(width=3),
+                    marker=dict(size=8),
+                    hovertemplate=f'<b>{region}</b><br>Year: %{{x}}<br>Impact: %{{y:,.0f}}<extra></extra>'
+                ))
+
+        # Update layout
+        fig.update_layout(
+            title=dict(
+                text=f'Regional Time Series Comparison<br><sub>{effect_label}</sub>',
+                x=0.5,
+                xanchor='center',
+                font=dict(size=16)
+            ),
+            xaxis_title='Year',
+            yaxis_title=f'{effect_label} ({unit})',
+            height=600,
+            template='plotly_white',
+            hovermode='x unified',
+            legend=dict(
+                orientation="v",
+                yanchor="top",
+                y=0.99,
+                xanchor="left",
+                x=0.01
+            )
+        )
+
+        # Save to HTML if path provided
+        if output_path:
+            fig.write_html(output_path)
+            print(f"Regional time series chart saved to {output_path}")
+
+        if show_fig:
+            fig.show()
+
+        return fig
+
+
+class RegionalVisualization:
+    """
+    Visualization class for regional I-O table analysis.
+    Loads and visualizes regional data with multi-level headers.
+    """
+
+    def __init__(self, data_file: str = '../data/iotable_2020_regional_revised_v3.xlsx'):
+        """
+        Initialize the Regional Visualization with data file.
+
+        Args:
+            data_file: Path to the regional I-O table Excel file
+        """
+        self.data_file = data_file
+        self.coefficients = {}
+        self.mapping = None
+        self.load_data()
+
+    def load_data(self):
+        """
+        Load regional I-O table data from Excel file.
+        Data structure:
+        - Column 0: sector code
+        - Column 1: region name (서울, 부산, etc.)
+        - Rightmost 3 columns: scenario values
+        - Row 0: header row (to be skipped)
+        """
+        print(f"Loading regional I-O table data from {self.data_file}...")
+
+        # Coefficient sheets to load
+        coeff_sheets = ['job', 'value', 'indirect', 'import']
+
+        for sheet_name in coeff_sheets:
+            try:
+                # Read the sheet
+                df = pd.read_excel(self.data_file, sheet_name=sheet_name)
+
+                # Skip first row (header row)
+                df = df.iloc[1:].copy()
+
+                # Reset index
+                df = df.reset_index(drop=True)
+
+                # Convert rightmost 3 columns to numeric
+                last_3_cols = df.columns[-3:]
+                for col in last_3_cols:
+                    df[col] = pd.to_numeric(df[col], errors='coerce')
+
+                self.coefficients[sheet_name] = df
+                print(f"Loaded '{sheet_name}' sheet: {df.shape}")
+                print(f"  Region column: '{df.columns[1]}'")
+                print(f"  Rightmost 3 columns: {last_3_cols.tolist()}")
+
+            except Exception as e:
+                print(f"Warning: Could not load sheet '{sheet_name}': {e}")
+                self.coefficients[sheet_name] = None
+
+        print("\nRegional data loading complete!")
+
+        # Summary
+        print(f"\nLoaded coefficient matrices:")
+        for name, df in self.coefficients.items():
+            if df is not None:
+                regions = df[df.columns[1]].nunique()
+                print(f"  - {name}: {df.shape} ({regions} regions)")
+
+    def create_regional_bar_graphs(self, scenario_names: List[str] = None,
+                                   output_dir: str = 'output/regional_bars',
+                                   show_fig: bool = False,
+                                   exclude_national: bool = True):
+        """
+        Create bar graphs for each coefficient using the rightmost 3 columns.
+        Groups data by region and sums values across all sectors.
+
+        Args:
+            scenario_names: Names for the 3 scenarios (default: ['Total', '160', '450'])
+            output_dir: Directory to save HTML files
+            show_fig: Whether to display figures
+            exclude_national: Whether to exclude '전국' (national total) from graphs
+
+        Returns:
+            Dictionary of figures organized by coefficient and scenario
+        """
+        import os
+        os.makedirs(output_dir, exist_ok=True)
+
+        if scenario_names is None:
+            scenario_names = ['Total', '160', '450']
+
+        # Coefficient names for display
+        coeff_labels = {
+            'job': 'Job Creation',
+            'value': 'Value Added',
+            'indirect': 'Indirect Production',
+            'import': 'Import'
+        }
+
+        all_figures = {}
+
+        for coeff_name, coeff_label in coeff_labels.items():
+            if coeff_name not in self.coefficients or self.coefficients[coeff_name] is None:
+                print(f"Warning: '{coeff_name}' data not available, skipping...")
+                continue
+
+            df = self.coefficients[coeff_name]
+
+            print(f"\n{'='*60}")
+            print(f"Processing '{coeff_name}' coefficient")
+            print(f"{'='*60}")
+
+            # Get region column (column 1) and rightmost 3 columns
+            region_col = df.columns[1]
+            rightmost_3_cols = df.columns[-3:]
+            print(f"Region column: '{region_col}'")
+            print(f"Scenario columns: {rightmost_3_cols.tolist()}")
+
+            # Group by region and sum
+            regional_sums = df.groupby(region_col)[rightmost_3_cols].sum()
+
+            # Exclude national total if requested
+            if exclude_national and '전국' in regional_sums.index:
+                regional_sums = regional_sums.drop('전국')
+
+            print(f"Number of regions: {len(regional_sums)}")
+
+            all_figures[coeff_name] = {}
+
+            # Process each of the 3 rightmost columns (scenarios)
+            for idx, (col, scenario_name) in enumerate(zip(rightmost_3_cols, scenario_names)):
+                print(f"\nCreating bar graph: {coeff_name} - {scenario_name}")
+
+                # Extract region and values
+                regions = regional_sums.index.tolist()
+                values = regional_sums[col].tolist()
+
+                # Remove NaN values
+                clean_data = [(r, v) for r, v in zip(regions, values)
+                             if pd.notna(v)]
+
+                if not clean_data:
+                    print(f"  No valid data found for {scenario_name}")
+                    continue
+
+                regions, values = zip(*clean_data)
+
+                # Create bar graph
+                fig = go.Figure()
+
+                # Color based on positive/negative values
+                # Green for positive, Red for negative
+                bar_colors = ['#2ecc71' if v >= 0 else '#e74c3c' for v in values]
+
+                fig.add_trace(go.Bar(
+                    x=list(regions),
+                    y=list(values),
+                    text=[f'{v:,.2f}' for v in values],
+                    textposition='outside',
+                    marker=dict(color=bar_colors),
+                    hovertemplate='<b>%{x}</b><br>Value: %{y:,.2f}<extra></extra>'
+                ))
+
+                fig.update_layout(
+                    title=dict(
+                        text=f'{coeff_label} - {scenario_name}<br><sub>Regional Distribution (Summed Across All Sectors)</sub>',
+                        x=0.5,
+                        xanchor='center',
+                        font=dict(size=16)
+                    ),
+                    xaxis_title='Region',
+                    yaxis_title=f'{coeff_label} Value',
+                    height=600,
+                    template='plotly_white',
+                    showlegend=False,
+                    xaxis=dict(tickangle=-45)
+                )
+
+                # Save figure
+                safe_scenario_name = str(scenario_name).replace(' ', '_').replace('+', '_')
+                filename = f"{output_dir}/{coeff_name}_{safe_scenario_name}.html"
+                fig.write_html(filename)
+                print(f"  ✅ Saved: {filename}")
+
+                all_figures[coeff_name][scenario_name] = fig
+
+                if show_fig:
+                    fig.show()
+
+        print(f"\n{'='*80}")
+        print(f"Created {sum(len(figs) for figs in all_figures.values())} bar graphs!")
+        print(f"Saved to: {output_dir}/")
+        print(f"{'='*80}")
+
+        return all_figures
+
 
 if __name__ == "__main__":
-    from scenario_analyzer import ScenarioAnalyzer
-
-    print("Loading and running scenario analysis...")
-    analyzer = ScenarioAnalyzer()
-    analyzer.run_all_scenarios()
-
-    print("\nCreating visualizations...")
-    viz = Visualization(analyzer)
-
-    # Create all yearly trends
-    #viz.create_all_trends(save_html=True)
-
-    # Create all top 10 sector charts for year 2050
-    #viz.create_all_top10_charts(year=2050, save_html=True)
-
-    # Example: Create interactive Plotly Code_H heatmap for indirect production in 2030
-    print("\nCreating interactive Code_H heatmap (Plotly)...")
-    viz.create_code_h_heatmap(
-        effect_type='indirect_prod',
-        year=2030,
-        top_n=10,
-        use_plotly=True,
-        output_path='code_h_heatmap_indirect_prod_2030.html'
+    visual = RegionalVisualization()
+    figures = visual.create_regional_bar_graphs(
+      scenario_names=['합계', '160', '450'],  #시나리오 이름 커스텀 가능
+      output_dir='output/regional_bars',
+      show_fig=True,  # 그래프 바로 표시
+      exclude_national=True  # '전국' 제외
     )
+
+    print("\nRegionalVisualization 테스트 완료!")
+
+# if __name__ == "__main__":
+#     from scenario_analyzer import ScenarioAnalyzer
+
+#     print("Loading and running scenario analysis...")
+#     analyzer = ScenarioAnalyzer()
+#     analyzer.run_all_scenarios()
+
+#     print("\nCreating visualizations...")
+#     viz = Visualization(analyzer)
+
+#     # Create all yearly trends
+#     #viz.create_all_trends(save_html=True)
+
+#     # Create all top 10 sector charts for year 2050
+#     #viz.create_all_top10_charts(year=2050, save_html=True)
+
+#     # Example: Create interactive Plotly Code_H heatmap for indirect production in 2030
+#     print("\nCreating interactive Code_H heatmap (Plotly)...")
+#     viz.create_code_h_heatmap(
+#         effect_type='indirect_prod',
+#         year=2030,
+#         top_n=10,
+#         use_plotly=True,
+#         output_path='code_h_heatmap_indirect_prod_2030.html'
+#     )
     
-    # Example: Create static matplotlib Code_H heatmap for job creation in 2050
-    viz.create_code_h_heatmap(
-        effect_type='jobcoeff',
-        year=2050,
-        top_n=10,
-        use_plotly=False,
-        output_path='code_h_heatmap_jobcoeff_2050.png'
-    )
+#     # Example: Create static matplotlib Code_H heatmap for job creation in 2050
+#     viz.create_code_h_heatmap(
+#         effect_type='jobcoeff',
+#         year=2050,
+#         top_n=10,
+#         use_plotly=False,
+#         output_path='code_h_heatmap_jobcoeff_2050.png'
+#     )
 
-    print("\nDone!")
+#     print("\nDone!")
