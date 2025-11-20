@@ -1283,6 +1283,52 @@ class RegionalVisualization:
         """
         print(f"Loading regional I-O table data from {self.data_file}...")
 
+        # Load sector mapping for product names (subsectormap)
+        try:
+            self.mapping = pd.read_excel(self.data_file, sheet_name='subsectormap')
+
+            # Create mapping with multiple format variations to ensure matching
+            self.sector_to_product = {}
+            for _, row in self.mapping.iterrows():
+                code = str(row['code']).strip()
+                product = row['product']
+
+                # Add multiple format variations
+                self.sector_to_product[code] = product  # Original
+                self.sector_to_product[code.lstrip('0')] = product  # Without leading zeros (e.g., "61")
+                if len(code) <= 2:
+                    self.sector_to_product[f"0{code}"] = product  # With leading zero (e.g., "061")
+                if len(code) == 1:
+                    self.sector_to_product[f"00{code}"] = product  # With two leading zeros
+
+            print(f"Loaded sector name mapping: {len(self.mapping)} sectors (with format variations)")
+        except Exception as e:
+            print(f"Warning: Could not load sector mapping: {e}")
+            self.sector_to_product = {}
+
+        # Load codemap for job coefficient (Sector -> product_h)
+        try:
+            self.codemap = pd.read_excel(self.data_file, sheet_name='codemap')
+
+            # Create mapping for job coefficient
+            self.job_sector_to_product = {}
+            for _, row in self.codemap.iterrows():
+                sector = str(int(row['Sector'])).strip()  # Convert to int first to remove .0
+                product_h = row['product_h']
+
+                # Add multiple format variations
+                self.job_sector_to_product[sector] = product_h  # Original
+                self.job_sector_to_product[sector.lstrip('0')] = product_h  # Without leading zeros
+                if len(sector) <= 2:
+                    self.job_sector_to_product[f"0{sector}"] = product_h  # With leading zero
+                if len(sector) == 1:
+                    self.job_sector_to_product[f"00{sector}"] = product_h  # With two leading zeros
+
+            print(f"Loaded job coefficient mapping (codemap): {len(self.codemap)} unique sector mappings")
+        except Exception as e:
+            print(f"Warning: Could not load codemap: {e}")
+            self.job_sector_to_product = {}
+
         # Coefficient sheets to load
         coeff_sheets = ['job', 'value', 'indirect', 'import']
 
@@ -1448,15 +1494,442 @@ class RegionalVisualization:
 
         return all_figures
 
+    def _split_product_name(self, name: str, max_chars_per_line: int = 10) -> str:
+        """
+        Split long product names into 2-3 lines to prevent overlap.
+
+        Args:
+            name: Product name to split
+            max_chars_per_line: Maximum characters per line
+
+        Returns:
+            Name with line breaks (<br> for HTML)
+        """
+        if len(name) <= max_chars_per_line:
+            return name
+
+        words = name.split()
+        if len(words) == 1:
+            # Single long word - split by characters
+            if len(name) <= max_chars_per_line * 2:
+                mid = len(name) // 2
+                return f"{name[:mid]}<br>{name[mid:]}"
+            else:
+                third = len(name) // 3
+                return f"{name[:third]}<br>{name[third:2*third]}<br>{name[2*third:]}"
+
+        # Multiple words - distribute across lines
+        lines = []
+        current_line = []
+        current_length = 0
+
+        for word in words:
+            word_length = len(word)
+            if current_length + word_length + len(current_line) > max_chars_per_line and current_line:
+                lines.append(' '.join(current_line))
+                current_line = [word]
+                current_length = word_length
+            else:
+                current_line.append(word)
+                current_length += word_length
+
+        if current_line:
+            lines.append(' '.join(current_line))
+
+        # Limit to 3 lines
+        if len(lines) > 3:
+            lines = lines[:2] + [' '.join(lines[2:])]
+
+        return '<br>'.join(lines)
+
+    def create_regional_heatmaps(self, scenario_names: List[str] = None,
+                                 top_n: int = 10,
+                                 output_dir: str = 'output/regional_heatmaps',
+                                 exclude_national: bool = True,
+                                 use_plotly: bool = True):
+        """
+        Create heatmaps showing top N sectors across regions for each coefficient and scenario.
+
+        Args:
+            scenario_names: Names for the 3 scenarios (default: ['Total', '160', '450'])
+            top_n: Number of top sectors to show (default: 10)
+            output_dir: Directory to save HTML/PNG files
+            exclude_national: Whether to exclude '전국' from heatmaps
+            use_plotly: Whether to use Plotly (True) or matplotlib (False)
+
+        Returns:
+            Dictionary of figures organized by coefficient and scenario
+        """
+        import os
+        os.makedirs(output_dir, exist_ok=True)
+
+        if scenario_names is None:
+            scenario_names = ['Total', '160', '450']
+
+        # Coefficient names for display
+        coeff_labels = {
+            'job': 'Job Creation',
+            'value': 'Value Added',
+            'indirect': 'Indirect Production',
+            'import': 'Import'
+        }
+
+        all_figures = {}
+
+        for coeff_name, coeff_label in coeff_labels.items():
+            if coeff_name not in self.coefficients or self.coefficients[coeff_name] is None:
+                print(f"Warning: '{coeff_name}' data not available, skipping...")
+                continue
+
+            df = self.coefficients[coeff_name]
+
+            print(f"\n{'='*60}")
+            print(f"Processing '{coeff_name}' coefficient heatmaps")
+            print(f"{'='*60}")
+
+            # Get sector code, region, and scenario columns
+            sector_col = df.columns[0]
+            region_col = df.columns[1]
+            rightmost_3_cols = df.columns[-3:]
+
+            all_figures[coeff_name] = {}
+
+            # Process each scenario
+            for idx, (scenario_col, scenario_name) in enumerate(zip(rightmost_3_cols, scenario_names)):
+                print(f"\nCreating heatmap: {coeff_name} - {scenario_name}")
+
+                # Create pivot table: sectors as rows, regions as columns
+                pivot_df = df.pivot_table(
+                    index=sector_col,
+                    columns=region_col,
+                    values=scenario_col,
+                    aggfunc='sum'
+                )
+
+                # Exclude '전국' column if requested
+                if exclude_national and '전국' in pivot_df.columns:
+                    pivot_df = pivot_df.drop(columns='전국')
+
+                # Create rank-based heatmap where each region shows its own top N sectors
+                # Y-axis: Rank (1st, 2nd, ..., Nth)
+                # X-axis: Regions
+                # Each cell: value for that region's Nth ranked sector
+
+                regions = pivot_df.columns.tolist()
+
+                # Store data for heatmap
+                heatmap_data = []  # Values for heatmap
+                sector_names_data = []  # Sector names for each cell
+                sector_codes_data = []  # Sector codes for each cell
+
+                for rank in range(top_n):
+                    row_values = []
+                    row_names = []
+                    row_codes = []
+
+                    for region in regions:
+                        # Get top N sectors for this region, sorted by absolute value (largest first)
+                        region_data_abs = pivot_df[region].abs().sort_values(ascending=False)
+
+                        if rank < len(region_data_abs):
+                            # Get the sector at this rank
+                            sector_code = region_data_abs.index[rank]
+                            value = pivot_df.loc[sector_code, region]
+
+                            # For job coefficient, use codemap mapping; otherwise use subsectormap
+                            if coeff_name == 'job':
+                                product_name = self.job_sector_to_product.get(str(sector_code), str(sector_code))
+                            else:
+                                product_name = self.sector_to_product.get(str(sector_code), str(sector_code))
+
+                            # Break long product names into 2-3 lines
+                            product_name_split = self._split_product_name(product_name)
+
+                            row_values.append(value)
+                            row_names.append(product_name_split)
+                            row_codes.append(str(sector_code))
+                        else:
+                            row_values.append(0)
+                            row_names.append('')
+                            row_codes.append('')
+
+                    heatmap_data.append(row_values)
+                    sector_names_data.append(row_names)
+                    sector_codes_data.append(row_codes)
+
+                # Create dataframe for heatmap
+                rank_labels = [f'#{i+1}' for i in range(top_n)]
+                heatmap_df = pd.DataFrame(heatmap_data, index=rank_labels, columns=regions)
+                sector_names_df = pd.DataFrame(sector_names_data, index=rank_labels, columns=regions)
+                sector_codes_df = pd.DataFrame(sector_codes_data, index=rank_labels, columns=regions)
+
+                if heatmap_df.empty:
+                    print(f"  No data available for {scenario_name}")
+                    continue
+
+                print(f"  Heatmap created: {len(heatmap_df)} ranks × {len(regions)} regions")
+                print(f"  Each region shows its top {top_n} sectors")
+
+                # Create heatmap
+                if use_plotly:
+                    fig = self._create_plotly_heatmap_ranked(
+                        heatmap_df,
+                        sector_names_df,
+                        sector_codes_df,
+                        coeff_label,
+                        scenario_name,
+                        top_n
+                    )
+
+                    # Save
+                    filename = f"{output_dir}/{coeff_name}_{scenario_name}_heatmap.html"
+                    fig.write_html(filename)
+                    print(f"  ✅ Saved: {filename}")
+                else:
+                    fig = self._create_matplotlib_heatmap_ranked(
+                        heatmap_df,
+                        sector_names_df,
+                        sector_codes_df,
+                        coeff_label,
+                        scenario_name,
+                        top_n
+                    )
+
+                    # Save
+                    filename = f"{output_dir}/{coeff_name}_{scenario_name}_heatmap.png"
+                    fig.savefig(filename, bbox_inches='tight', dpi=150)
+                    print(f"  ✅ Saved: {filename}")
+                    plt.close(fig)
+
+                all_figures[coeff_name][scenario_name] = fig
+
+        print(f"\n{'='*80}")
+        print(f"Created {sum(len(figs) for figs in all_figures.values())} heatmaps!")
+        print(f"Saved to: {output_dir}/")
+        print(f"{'='*80}")
+
+        return all_figures
+
+    def _create_plotly_heatmap_ranked(self, heatmap_df, sector_names_df, sector_codes_df,
+                                      coeff_label, scenario_name, top_n):
+        """Create interactive Plotly heatmap with rank-based structure."""
+        # Prepare data
+        z_values = heatmap_df.values
+        x_labels = heatmap_df.columns.tolist()
+        y_labels = heatmap_df.index.tolist()
+
+        # Text labels are sector names
+        text_labels = sector_names_df.values.tolist()
+
+        # Create hover text with rank, sector code, product name, and values
+        hover_text = []
+        for i in range(len(y_labels)):
+            row_hover = []
+            for j in range(len(x_labels)):
+                sector_code = sector_codes_df.iloc[i, j]
+                sector_name = sector_names_df.iloc[i, j]
+                value = z_values[i][j]
+                hover = f"<b>Rank: {y_labels[i]}</b><br>Region: {x_labels[j]}<br>Sector: {sector_code}<br>Product: {sector_name}<br>Value: {value:,.2f}"
+                row_hover.append(hover)
+            hover_text.append(row_hover)
+
+        # Determine color range and colorscale based on data
+        non_zero_values = z_values[z_values != 0]
+
+        if len(non_zero_values) > 0:
+            all_positive = np.all(z_values >= 0)
+            all_negative = np.all(z_values <= 0)
+
+            if all_positive:
+                # All positive: use warm red-white colorscale (white=0, warm red=max)
+                vmax = np.percentile(non_zero_values, 90)
+                zmin = 0
+                zmax = vmax
+                colorscale = [[0, 'white'], [0.5, '#ff9999'], [1, '#ff6b6b']]  # Warm coral red
+                zmid = None
+            elif all_negative:
+                # All negative: use warm blue-white colorscale (warm blue=min, white=0)
+                vmin = np.percentile(non_zero_values, 10)
+                zmin = vmin
+                zmax = 0
+                colorscale = [[0, '#74b9ff'], [0.5, '#a3d5ff'], [1, 'white']]  # Warm bright blue
+                zmid = None
+            else:
+                # Mixed: use diverging colormap (warm blue=negative, white=0, warm red=positive)
+                vmin = np.percentile(non_zero_values, 10)
+                vmax = np.percentile(non_zero_values, 90)
+                # Make range symmetric around zero
+                vrange = max(abs(vmin), abs(vmax))
+                zmin = -vrange
+                zmax = vrange
+                colorscale = [[0, '#74b9ff'], [0.4, '#d4e9ff'], [0.5, 'white'], [0.6, '#ffd4d4'], [1, '#ff6b6b']]
+                zmid = 0
+        else:
+            zmin = None
+            zmax = None
+            colorscale = 'RdBu_r'
+            zmid = 0
+
+        # Create heatmap
+        fig = go.Figure(data=go.Heatmap(
+            z=z_values,
+            x=x_labels,
+            y=y_labels,
+            text=text_labels,
+            hovertext=hover_text,
+            hoverinfo='text',
+            texttemplate='%{text}',
+            textfont={"size": 5},
+            colorscale=colorscale,
+            zmid=zmid,
+            zmin=zmin,
+            zmax=zmax,
+            colorbar=dict(
+                title=dict(text="Value", side="right"),
+                tickformat=",",
+            ),
+            xgap=1,
+            ygap=1,
+        ))
+
+        fig.update_layout(
+            title=dict(
+                text=f'{coeff_label} - {scenario_name}<br><sub>Top {top_n} Sectors per Region</sub>',
+                x=0.5,
+                xanchor='center',
+                font=dict(size=16)
+            ),
+            xaxis=dict(
+                title='Region',
+                side='top',
+                tickangle=-45,
+                tickfont=dict(size=10),
+            ),
+            yaxis=dict(
+                title='Rank',
+                tickfont=dict(size=10),
+                autorange='reversed'
+            ),
+            width=max(1000, len(x_labels) * 60),
+            height=max(400, top_n * 40),
+            template='plotly_white',
+            margin=dict(l=100, r=100, t=100, b=100),
+        )
+
+        return fig
+
+    def _create_matplotlib_heatmap_ranked(self, heatmap_df, sector_names_df, sector_codes_df,
+                                          coeff_label, scenario_name, top_n):
+        """Create static matplotlib heatmap with rank-based structure."""
+        # Create figure
+        fig_width = max(14, len(heatmap_df.columns) * 1.0)
+        fig_height = max(8, top_n * 0.6)
+        fig, ax = plt.subplots(figsize=(fig_width, fig_height))
+
+        # Convert <br> to \n for matplotlib
+        sector_names_matplotlib = sector_names_df.copy()
+        for col in sector_names_matplotlib.columns:
+            sector_names_matplotlib[col] = sector_names_matplotlib[col].str.replace('<br>', '\n', regex=False)
+
+        # Determine color range and colormap based on data
+        values = heatmap_df.values
+        non_zero_values = values[values != 0]
+
+        if len(non_zero_values) > 0:
+            all_positive = np.all(values >= 0)
+            all_negative = np.all(values <= 0)
+
+            if all_positive:
+                # All positive: use warm red-white colormap
+                from matplotlib.colors import LinearSegmentedColormap
+                vmax = np.percentile(non_zero_values, 90)
+                vmin_plot = 0
+                vmax_plot = vmax
+                colors_warm_red = ['white', '#ff9999', '#ff6b6b']
+                cmap = LinearSegmentedColormap.from_list('warm_red', colors_warm_red)
+                center = None
+            elif all_negative:
+                # All negative: use warm blue-white colormap
+                from matplotlib.colors import LinearSegmentedColormap
+                vmin = np.percentile(non_zero_values, 10)
+                vmin_plot = vmin
+                vmax_plot = 0
+                colors_warm_blue = ['#74b9ff', '#a3d5ff', 'white']
+                cmap = LinearSegmentedColormap.from_list('warm_blue', colors_warm_blue)
+                center = None
+            else:
+                # Mixed: use warm diverging colormap
+                from matplotlib.colors import LinearSegmentedColormap
+                vmin = np.percentile(non_zero_values, 10)
+                vmax = np.percentile(non_zero_values, 90)
+                vrange = max(abs(vmin), abs(vmax))
+                vmin_plot = -vrange
+                vmax_plot = vrange
+                colors_diverging = ['#74b9ff', '#d4e9ff', 'white', '#ffd4d4', '#ff6b6b']
+                cmap = LinearSegmentedColormap.from_list('warm_diverging', colors_diverging)
+                center = 0
+        else:
+            vmin_plot = None
+            vmax_plot = None
+            cmap = 'RdBu_r'
+            center = 0
+
+        # Create heatmap
+        heatmap_params = {
+            'data': heatmap_df,
+            'annot': sector_names_matplotlib,
+            'fmt': 's',
+            'cmap': cmap,
+            'vmin': vmin_plot,
+            'vmax': vmax_plot,
+            'linewidths': 0.5,
+            'linecolor': 'lightgray',
+            'annot_kws': {"size": 3, "va": "center"},
+            'cbar_kws': {'label': 'Value'},
+            'ax': ax
+        }
+
+        if center is not None:
+            heatmap_params['center'] = center
+
+        sns.heatmap(**heatmap_params)
+
+        # Configure axes
+        ax.xaxis.tick_top()
+        ax.xaxis.set_label_position('top')
+        ax.tick_params(axis='x', rotation=45, labelsize=9)
+        ax.tick_params(axis='y', labelsize=10)
+
+        ax.set_xlabel('Region', fontsize=11)
+        ax.set_ylabel('Rank', fontsize=11)
+        ax.set_title(
+            f'{coeff_label} - {scenario_name}\nTop {top_n} Sectors per Region',
+            fontsize=14,
+            pad=20
+        )
+
+        plt.tight_layout()
+
+        return fig
+
 
 if __name__ == "__main__":
     visual = RegionalVisualization()
-    figures = visual.create_regional_bar_graphs(
-      scenario_names=['합계', '160', '450'],  #시나리오 이름 커스텀 가능
-      output_dir='output/regional_bars',
-      show_fig=True,  # 그래프 바로 표시
-      exclude_national=True  # '전국' 제외
-    )
+    # figures = visual.create_regional_bar_graphs(
+    #   scenario_names=['합계', '160', '450'],  #시나리오 이름 커스텀 가능
+    #   output_dir='output/regional_bars',
+    #   show_fig=True,  # 그래프 바로 표시
+    #   exclude_national=True  # '전국' 제외
+    # )
+
+   # Plotly 히트맵 생성 (인터랙티브 HTML)
+    figures = visual.create_regional_heatmaps(
+        scenario_names=['합계', '160', '450'],
+        top_n=10,  # 상위 10개 섹터 (각 지역별 값이 가장 큰 것부터)
+        output_dir='output/regional_heatmaps',
+        exclude_national=True,  # '전국' 제외
+        use_plotly=True  # Plotly 사용
+    )   
 
     print("\nRegionalVisualization 테스트 완료!")
 
