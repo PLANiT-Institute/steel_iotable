@@ -1800,7 +1800,7 @@ class RegionalVisualization:
                 font=dict(size=16)
             ),
             xaxis=dict(
-                title='Region',
+                title=' ',
                 side='top',
                 tickangle=-45,
                 tickfont=dict(size=10),
