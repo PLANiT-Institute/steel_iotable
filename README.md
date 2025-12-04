@@ -1,11 +1,11 @@
-# Steel-Coal I-O Table Direct Effects Analyzer
+# Korean steel sector Input-Output analyzer
 
-A comprehensive Input-Output (I-O) Table analysis tool for analyzing direct and indirect economic effects of demand changes in specific sectors, with specialized focus on steel and coal industries. Built using Korean I-O Table data from 2020, this tool provides both economic impact analysis and employment effects analysis.
+A comprehensive Input-Output (I-O) Table analysis tool for analyzing direct and indirect economic effects of demand changes in specific sectors, with specialized focus on steel industries in South Korea. Built using Korean I-O Table data from 2020 and 2023, this tool provides both economic impact analysis and employment effects analysis.
 
 ## Features
 
 ### **Economic Analysis**
-- **6 Economic Coefficient Types**: Analyze direct total, import, domestic, indirect production, indirect import, and value-added effects
+- **3 Economic Coefficient Types**: Analyze indirect production, indirect import, and value-added effects
 - **Monetary Impact Assessment**: Calculate economic impacts in monetary units across 380+ economic sectors
 - **Supply Chain Analysis**: Track ripple effects through interconnected economic sectors
 
@@ -13,7 +13,6 @@ A comprehensive Input-Output (I-O) Table analysis tool for analyzing direct and 
 - **2 Employment Coefficient Types**: Total job creation and direct employment effects
 - **Job Impact Calculation**: Estimate employment effects measured in number of jobs
 - **Sub-Sector Mapping**: Uses hierarchical sector structure (411 basic sectors → 165 sub-sectors) for precise employment analysis
-- **Korean Sub-Sector Names**: Displays meaningful Korean names for employment sub-sectors
 
 ### **User Interfaces**
 - **CLI Interface**: Command-line tool for interactive analysis
@@ -50,47 +49,6 @@ streamlit run main_gui.py
 
 The analysis relies on a comprehensive Excel file with 11 sheets containing mapping data and coefficient matrices:
 
-#### **Mapping Sheets**
-
-##### 1. **basicmap** - Basic Sector Mapping
-- **Columns**: `code`, `product` 
-- **Size**: 411 basic sectors
-- **Purpose**: Primary sector code to Korean product name mapping
-- **Code Format**: Integer codes (111, 2711, etc.)
-- **Example**:
-  ```
-  code | product
-  111  | 벼 (Rice)
-  112  | 맥류 및 잡곡 (Barley and misc grains)  
-  2711 | 선철 (Pig iron)
-  2721 | 철근 및 봉강 (Rebar and bar steel)
-  ```
-
-##### 2. **subsectormap** - Employment Sub-Sector Mapping  
-- **Columns**: `code`, `name`
-- **Size**: 196 employment sub-sectors
-- **Purpose**: Maps employment sub-sector codes to Korean names
-- **Usage**: Used for job coefficient result display
-- **Example**:
-  ```
-  code | name
-  271  | 선철 및 조강 (Iron and steel)
-  532  | 도로운송서비스 (Road transport services)
-  711  | 법무 및 경영지원서비스 (Legal and business support)
-  ```
-
-##### 3. **codemap** - Hierarchical Sector Mapping
-- **Columns**: `Basic`, `Sub-sector`, `Sector`
-- **Size**: 411 mappings
-- **Purpose**: Maps basic sectors (411) to employment sub-sectors (165) and main sectors
-- **Critical Role**: Enables job coefficient analysis by connecting basic sectors to employment data
-- **Example**:
-  ```
-  Basic | Sub-sector | Sector
-  2711  | 271        | 27    (Pig iron → Iron/Steel sub-sector → Primary metal sector)
-  2712  | 271        | 27    (Ferroalloys → Iron/Steel sub-sector → Primary metal sector)
-  ```
-
 #### **Economic Coefficient Matrices (6 sheets)**
 
 All economic coefficient matrices share the same structure:
@@ -102,9 +60,6 @@ All economic coefficient matrices share the same structure:
 
 | Sheet Name | Matrix Symbol | Coefficient Type | Economic Meaning |
 |------------|---------------|------------------|------------------|
-| `directinputcoeff_A` | **A** | Direct Total | Total direct requirements matrix |
-| `importinputcoeff_Am` | **Am** | Direct Import | Import requirements matrix |
-| `domesticinputcoeff_Ad` | **Ad** | Direct Domestic | Domestic requirements matrix |
 | `indirectprodcoeff` | **(I-Ad)⁻¹** | Indirect Production | Leontief inverse matrix |
 | `indirectimportcoeff` | **Am(I-Ad)⁻¹** | Indirect Import | Total import requirements |
 | `valueaddedcoeff` | **V** | Value-Added | Value-added coefficients |
@@ -122,21 +77,6 @@ Employment matrices use the sub-sector structure:
 |------------|------------------|-------------------|
 | `jobcoeff` | **Total Job Creation** | Total employment effects (direct + indirect) |
 | `directemploycoeff` | **Direct Employment** | Direct employment effects only |
-
-#### **Data Relationships and Flow**
-```
-User Input: Basic Sector (2711)
-     ↓
-basicmap: 2711 → "선철" (Product name)
-     ↓  
-codemap: 2711 → 271 (Sub-sector mapping)
-     ↓
-subsectormap: 271 → "선철 및 조강" (Sub-sector name)
-     ↓
-Employment Matrix: Column 271 → Job coefficients
-     ↓
-Results: Job impacts across all 165 sub-sectors
-```
 
 #### **Matrix Interpretation Example**
 For economic coefficient A[i,j] = 0.025:
@@ -190,29 +130,8 @@ analyzer = IOTableAnalyzer(data_file='data/iotable_2020.xlsx')
 **Parameters**:
 - `target_sector`: Sector code (string like "0111" or integer like 2711)
 - `demand_change`: Final demand change amount (float, can be negative)
-- `coeff_type`: Coefficient type ('A', 'Am', 'Ad', 'indirect_prod', 'indirect_import', 'value_added')
+- `coeff_type`: Coefficient type ('indirect_prod', 'indirect_import', 'value_added')
 - `quiet`: If True, suppress console output
-
-**Returns**: Dictionary with complete analysis results
-```python
-{
-    'target_sector': '0111',
-    'target_product': '벼',
-    'demand_change': 1000000,
-    'coeff_type': 'A',
-    'coeff_name': 'Direct Total',
-    'impacts': [
-        {
-            'sector_code': '0111',
-            'sector_name': '벼',
-            'impact': 850000.5
-        },
-        # ... more impacts
-    ],
-    'total_impact': 1250000.75,
-    'num_affected_sectors': 137
-}
-```
 
 **Calculation Logic**:
 1. Select appropriate coefficient matrix
@@ -226,152 +145,9 @@ analyzer = IOTableAnalyzer(data_file='data/iotable_2020.xlsx')
 - **Purpose**: Format and display analysis results in console
 - **Output**: Formatted table showing top 20 impacts with statistics
 
-## Detailed Usage Examples and Methodology
-
-### **Economic Impact Analysis Example**
-
-**Scenario**: Analyze the economic impact of a 1 billion won increase in pig iron (선철) demand.
-
-**Step-by-step Analysis**:
-
-1. **Select Target Sector**: 2711 (선철/Pig iron)
-2. **Choose Coefficient Type**: 'A' (Direct Total)
-3. **Set Demand Change**: 1,000,000,000 won (1 billion won)
-
-**Expected Results**:
-```
-Direct Total Effects for 2711: 선철
-- Total Impact: 79,360,000 won across 181 affected sectors
-- Top Impacts:
-  1. 2711: 선철 → 17,121,000 won (own-sector effect)
-  2. 0711: 철광석 → 15,832,000 won (iron ore input)
-  3. 5320: 도로운송 → 8,445,000 won (transportation)
-  4. 2610: 도자기제품 → 6,250,000 won (ceramic products)
-```
-
-**Interpretation**:
-- **Multiplier Effect**: 1 billion won demand creates 79.4 million won additional economic activity
-- **Supply Chain**: Major impacts on iron ore, transportation, and ceramic industries
-- **Backward Linkages**: Shows sectors that supply inputs to pig iron production
-
-### **Employment Impact Analysis Example**
-
-**Scenario**: Estimate job creation from the same 1 billion won pig iron demand increase.
-
-**Employment Analysis Process**:
-
-1. **Basic Sector Input**: 2711 (선철)
-2. **Mapping to Sub-sector**: 2711 → 271 (선철 및 조강/Iron and steel)
-3. **Job Coefficient Application**: Applied to 165 employment sub-sectors
-
-**Total Job Creation Results**:
-```
-Total Job Creation for 2711: 선철
-- Mapped to Sub-sector: 271 (선철 및 조강)
-- Total Jobs: 4,565 jobs across 155 affected sub-sectors
-- Top Job Creation:
-  1. 271: 선철 및 조강 → 877 jobs (steel industry jobs)
-  2. 532: 도로운송서비스 → 591 jobs (transportation jobs)  
-  3. 492: 자원재활용서비스 → 429 jobs (recycling jobs)
-  4. 520: 도소매서비스 → 388 jobs (wholesale/retail jobs)
-```
-
-**Direct Employment Results**:
-```
-Direct Employment for 2711: 선철  
-- Total Direct Jobs: 3,456 jobs across 155 sub-sectors
-- Top Direct Employment:
-  1. 271: 선철 및 조강 → 864 jobs (direct steel jobs)
-  2. 492: 자원재활용서비스 → 245 jobs (direct recycling jobs)
-  3. 520: 도소매서비스 → 237 jobs (direct retail jobs)
-```
-
-**Job Impact Interpretation**:
-- **Total vs Direct**: Total job creation (4,565) > Direct employment (3,456)
-- **Employment Multiplier**: 4.57 jobs per billion won in pig iron sector
-- **Sectoral Distribution**: Jobs spread across steel, transport, recycling, and service sectors
-- **Policy Insights**: Investment in steel industry creates jobs beyond manufacturing
-
-### **Comparative Analysis Methodology**
-
-**Multi-Coefficient Analysis**:
-Compare all 8 coefficient types for comprehensive impact assessment:
-
-| Effect Type | Coefficient | Impact | Unit | Interpretation |
-|-------------|------------|--------|------|----------------|
-| **Economic** | A (Direct Total) | 79,360 | thousand won | Immediate supply chain impact |
-| **Economic** | Am (Import) | 8,004 | thousand won | Import requirements |
-| **Economic** | Ad (Domestic) | 58,288 | thousand won | Domestic supply chain |
-| **Economic** | Indirect Production | 211,045 | thousand won | Total output multiplier |
-| **Economic** | Indirect Import | 12,914 | thousand won | Total import impact |
-| **Economic** | Value-Added | 60,186 | thousand won | GDP contribution |
-| **Employment** | Total Job Creation | 4,565 | jobs | Total employment effect |
-| **Employment** | Direct Employment | 3,456 | jobs | Direct job creation |
-
-**Analysis Insights**:
-- **Economic Multiplier**: Indirect production (211M) > Direct total (79M), showing significant supply chain effects
-- **Import Dependency**: Import effects (8M direct, 13M total) relatively low for steel sector
-- **Employment Efficiency**: 4.57 total jobs per billion won investment
-- **Value Creation**: 60M won GDP contribution per billion won demand
-
-### **Steel Industry Policy Analysis Example**
-
-**Policy Question**: What are the economic and employment effects of a 10 billion won steel industry stimulus?
-
-**Methodology**:
-1. **Target Multiple Steel Sectors**: 2711 (pig iron), 2721 (rebar), 2730 (cold-rolled steel)
-2. **Demand Distribution**: 4B won pig iron, 3B won rebar, 3B won cold-rolled
-3. **Comprehensive Analysis**: All 8 coefficient types
-4. **Aggregated Results**: Sum impacts across steel sub-sectors
-
-**Expected Policy Insights**:
-- **Total Economic Impact**: ~2.1 billion won additional economic activity
-- **Job Creation**: ~45,650 total jobs, ~34,560 direct jobs
-- **Supply Chain Effects**: Major impacts on mining, transportation, manufacturing services
-- **Regional Development**: Job distribution across industrial and service sectors
-- **Trade Balance**: Import requirements and domestic content analysis
-
 ## User Interfaces
 
-### 1. Command Line Interface (`main.py`)
-
-**Interactive Analysis Tool** with comprehensive options:
-
-#### **Menu Options**:
-1. **List all sectors**: Browse 411 available sectors with Korean names
-2. **Analyze direct effects**: Conduct detailed impact analysis
-3. **Exit**: Close application
-
-#### **Analysis Workflow**:
-```bash
-python main.py
-
-Select option (1-3): 2
-
-Available coefficient types:
-A                 - Direct Total coefficients  
-Am                - Direct Import coefficients
-Ad                - Direct Domestic coefficients
-indirect_prod     - Indirect Production (I-Ad)⁻¹
-indirect_import   - Indirect Import coefficients  
-value_added       - Value-Added coefficients
-jobcoeff          - Total Job Creation coefficients
-directemploycoeff - Direct Employment coefficients
-
-Select coefficient type: jobcoeff
-Enter sector code (e.g., 111, 0111, or 2711): 2711
-Enter demand change amount: 1000000000
-
-# Results display with formatted tables
-```
-
-#### **CLI Output Features**:
-- **Formatted Results**: Professional table display with top 20 impacts
-- **Summary Statistics**: Total impact, affected sectors, coefficient details
-- **Multi-format Input**: Supports 111, 0111, "2711" sector code formats
-- **Error Handling**: Validates inputs and provides clear error messages
-
-### 2. Web GUI Interface (`main_gui.py`)
+### Web GUI Interface (`main_gui.py`)
 
 Built with Streamlit, featuring:
 
