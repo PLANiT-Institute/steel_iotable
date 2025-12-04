@@ -64,14 +64,14 @@ The application has three main modules accessible from the sidebar:
 - Preview scenario data
 - Manage scenario configurations
 
-#### 2. **📊 Tables** (5 Tabs)
+#### 2. **📊 Result Tables** (5 Tabs)
 - **🚀 Run Analysis**: Select scenario file and execute batch analysis
 - **🔗 Integrated**: Summary tables combining all effect types (2026, 2030, 2040, 2050)
 - **⚡ H2**: Hydrogen table analysis results
 - **📊 Total**: Aggregated summary across all analyses
 - **👤 Individual**: Detailed individual sector analysis
 
-#### 3. **📈 Visualisation** (3 Tabs)
+#### 3. **📈 Result Visualisation** (3 Tabs)
 - **📈 Yearly Trends**: Time-series visualization of impacts
   - IO Table trends (1610=coal, 4506=renewables, 1610&4506=combined coal & renewables)
   - Hydrogen value chain trends (H2S=Hydrogen storage, H2T=Hydrogen transportation, H2S&H2T=both Hydrogen storage & transportation)
