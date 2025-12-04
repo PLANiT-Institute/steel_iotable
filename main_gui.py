@@ -331,16 +331,33 @@ def run_scenario_analysis():
                 st.success(f"✅ Analysis complete for Data_v11.xlsx!")
 
                 # Show summary of results
-                st.markdown("### 📊 Analysis Summary")
-                st.write(f"Coal&Renewable(한국은행 2023년 연장표), 그리고 H2(최수빈 외 2인, 2023)는 분석에 활용한 산업연관표가 상이하기 때문에 구분해서 분석하고 결과를 도출하는 것을 권장합니다.")
-                st.write(f"이러한 이유로 분석에 활용된 계수 종류가 산업연관표에 따라 상이할 수 있습니다.")
-                st.write(f"(예: 한국은행 연장표 - 생산유발효과, 수입유발효과, 부가가치유발효과, 고용유발효과,취업유발효과)")
-                st.write(f"(예: 최수빈 외 2인 (2023) 산업연관표 - 생산유발효과, 부가가치유발효과, 임금유발효과, 취업유발효과)")
-                st.write(f"Coal+Renewable+H2 value chain의 Job creation은 Coal+Renewable의 Job creation과 H2 value chain의 Direct Employment 값을 합한 것입니다.")
-                st.write(f"1610: Coal, 4506: Renewable, H2S: Hydrogen Storage, H2T: Hydrogen Transport")
-                st.write(f"시나리오 1 (최적화 시나리오) : 이전 연구인 ‘수소환원제철 국내 정착을 위한 핵심 과제’ 에서 한계감축비용곡선(MACC) 분석을 통한 도출한 가장 비용 효과적인 저탄소 철강 생산 기술 도입 경로를 채택한 최적화된 전환 시나리오")                
-                st.write(f"시나리오 2 (POSCO 시나리오) : POSCO 에서 2024 지속가능경영보고서를 통해 밝힌 전환 시나리오")
-                # Count years
+                st.markdown("""
+                <div style="border-radius: 12px; background: linear-gradient(90deg, #ddefff 0%, #e6fced 100%); border: 1px solid #b5cddd; padding: 25px 25px 18px 25px; margin: 18px 0; font-size: 17px;">
+                  <strong>📘 Note</strong>
+                  <ul style="margin-top: 10px; margin-bottom: 0;">
+                    <li><strong>Coal&Renewable</strong> (한국은행 2023년 연장표), <strong>H2</strong> (최수빈 외 2인, 2023)는 분석에 활용한 <u>산업연관표가 상이</u>하기 때문에 <span style="color:#444;">구분해서 분석하고 결과를 도출하는 것을 권장</span>합니다.</li>
+                    <li>이로 인해 <u>분석에 활용된 계수 종류가 산업연관표에 따라 다를 수 있습니다</u>.</li>
+                    <li>
+                      <div style="padding-left:22px;">
+                        (예: <b>한국은행 연장표</b> - 생산유발효과, 수입유발효과, 부가가치유발효과, 고용유발효과, 취업유발효과)<br/>
+                        (예: <b>최수빈 외 2인 (2023) 산업연관표</b> - 생산유발효과, 부가가치유발효과, 임금유발효과, 취업유발효과)
+                      </div>
+                    </li>
+                    <li>Coal+Renewable+H2 value chain의 <b>Job creation</b>은 <b>Coal+Renewable의 Job creation</b>과 <b>H2 value chain의 Direct Employment</b> 값을 합한 것입니다.</li>
+                    <li>
+                      <b>코드 해설:</b> 1610: Coal, 4506: Renewable, H2S: Hydrogen Storage, H2T: Hydrogen Transport
+                    </li>
+                    <li>
+                      <b>시나리오 1 (최적화 시나리오)</b>: 
+                        이전 연구인 ‘수소환원제철 국내 정착을 위한 핵심 과제’에서 한계감축비용곡선(MACC) 분석을 통한, 가장 비용 효과적인 저탄소 철강 생산 기술 도입 경로를 채택한 최적화된 전환 시나리오
+                    </li>
+                    <li>
+                      <b>시나리오 2 (POSCO 시나리오)</b>: 
+                        POSCO에서 2024 지속가능경영보고서를 통해 밝힌 전환 시나리오
+                    </li>
+                  </ul>
+                </div>
+                """, unsafe_allow_html=True)
                 # Get all effect types from the original results
                 effect_types = list(scenario_analyzer.aggregated_results.keys())
 
@@ -416,12 +433,67 @@ def filter_results_by_scenario_sheet(scenario_analyzer, sheet_name):
 
                 aggregated_impacts.sort(key=lambda x: abs(x['total_impact']), reverse=True)
 
+                # Also create code_h grouped impacts
+                all_code_h_impacts = {}
+
+                # Define fallback names for H2 and other sectors
+                sector_fallback_names = {
+                    'H2S': '수소 저장',
+                    'H2T': '수소 운송'
+                }
+
+                for sector_code, data in all_sector_impacts.items():
+                    # Map to code_h and product_h from codemap
+                    code_h = ''
+                    product_h = ''
+                    if hasattr(scenario_analyzer, 'io_analyzer') and scenario_analyzer.io_analyzer:
+                        code_h = scenario_analyzer.io_analyzer.basic_to_code_h.get(sector_code, sector_code)
+                        product_h = scenario_analyzer.io_analyzer.code_h_to_product_h.get(code_h, '') if code_h else ''
+
+                    # If no product_h found (e.g., for H2 sectors or unmapped codes), use fallback
+                    if not product_h:
+                        if sector_code in sector_fallback_names:
+                            product_h = sector_fallback_names[sector_code]
+                            code_h = sector_code  # Use sector code as code_h
+                        else:
+                            # Last resort: use sector_code as both code_h and product_h
+                            product_h = f"Sector {sector_code}"
+                            code_h = sector_code
+
+                    # Use code_h as the grouping key
+                    group_key = code_h if code_h else sector_code
+
+                    if group_key not in all_code_h_impacts:
+                        all_code_h_impacts[group_key] = {
+                            'code_h': code_h,
+                            'product_h': product_h,
+                            'total_impact': 0,
+                            'scenario_count': 0
+                        }
+
+                    all_code_h_impacts[group_key]['total_impact'] += data['total_impact']
+                    all_code_h_impacts[group_key]['scenario_count'] += data['scenario_count']
+
+                # Convert to sorted list
+                code_h_aggregated = []
+                for group_key, data in all_code_h_impacts.items():
+                    code_h_aggregated.append({
+                        'code_h': data['code_h'],
+                        'product_h': data['product_h'],
+                        'total_impact': data['total_impact'],
+                        'avg_impact': data['total_impact'] / data['scenario_count'],
+                        'scenario_count': data['scenario_count']
+                    })
+
+                code_h_aggregated.sort(key=lambda x: abs(x['total_impact']), reverse=True)
+
                 filtered_results[effect_type][year] = {
                     'total_aggregate_impact': total_aggregate_impact,
                     'scenario_count': scenario_count,
                     'avg_aggregate_impact': total_aggregate_impact / scenario_count if scenario_count > 0 else 0,
                     'num_affected_sectors': len(all_sector_impacts),
-                    'sector_impacts': aggregated_impacts
+                    'sector_impacts': aggregated_impacts,
+                    'code_h_impacts': code_h_aggregated
                 }
 
     return filtered_results
@@ -1844,7 +1916,7 @@ def show_summary_visualizations():
         return
 
     # Create tabs for different visualization types
-    viz_tabs = st.tabs(["📈 Yearly Trends", "🗺️ Sector Maps", "🔥 Code_H Heatmap", "📊 Scenario comparison"])
+    viz_tabs = st.tabs(["📈 Yearly Trends", "🗺️ Sector Maps", "🌳 Code_H Treemap", "📊 Scenario comparison"])
 
     # TAB 1: Yearly Trends
     with viz_tabs[0]:
@@ -2205,149 +2277,221 @@ def show_summary_visualizations():
                     st.error(f"Error generating sector map: {e}")
                     st.exception(e)
 
-    # TAB 3: Code_H Heatmap
+    # TAB 3: Code_H Category Treemap
     with viz_tabs[2]:
-        st.markdown("### 🔥 Code_H Sector Heatmap")
-        st.markdown("Interactive heatmap showing top sectors by Product_H category, ranked by impact magnitude")
+        st.markdown("### 🌳 Code_H Category Treemap")
+        st.markdown("Interactive treemap showing impacts aggregated by Code_H categories (coal+renewable+H2 value chain)")
+        st.info("💡 **Visualization**: Size = Impact magnitude | Color = 🟦 Positive (blue/green) vs 🔴 Negative (red)")
 
         # Scenario sheet selector at the top
         if not hasattr(scenario_analyzer, 'scenario_sheet_names'):
             st.error("Scenario sheet information not available.")
         else:
             scenario_sheets = scenario_analyzer.scenario_sheet_names
-            selected_sheet_heatmap = st.selectbox(
+            selected_sheet_treemap = st.selectbox(
                 "📋 Select Scenario Sheet:",
                 options=scenario_sheets,
-                key="heatmap_scenario_selection",
+                key="treemap_scenario_selection",
                 help="Choose which scenario sheet to visualize"
             )
 
-            st.info(f"**Visualizing scenario sheet:** {selected_sheet_heatmap}")
+            st.info(f"**Visualizing scenario sheet:** {selected_sheet_treemap}")
             st.markdown("---")
 
             # Get filtered results for the selected scenario sheet
-            sheet_results = filter_results_by_scenario_sheet(scenario_analyzer, selected_sheet_heatmap)
+            sheet_results = filter_results_by_scenario_sheet(scenario_analyzer, selected_sheet_treemap)
 
-            effect_labels = {
-                'indirect_prod': '💰 Indirect Production (Billion Won)',
-                'indirect_import': '🌐 Indirect Import (Billion Won)',
-                'value_added': '💎 Value Added (Billion Won)',
-                'jobcoeff': '👥 Job Creation (Persons)',
-                'directemploycoeff': '👔 Direct Employment (Persons)',
-                'productioncoeff': '⚡ Production Coeff (Billion Won)',
-                'valueaddedcoeff': '💎 Value Added Coeff (Billion Won)'
-            }
+            # Year selector
+            available_years_all = set()
+            for effect_type in sheet_results.keys():
+                if sheet_results[effect_type]:
+                    available_years_all.update(sheet_results[effect_type].keys())
 
-            available_effects = [
-                effect for effect in effect_labels.keys()
-                if effect in sheet_results and sheet_results[effect]
-            ]
-
-            if not available_effects:
-                st.warning("No effect types available for the selected scenario sheet.")
+            if not available_years_all:
+                st.warning("No yearly data available for the selected scenario sheet.")
             else:
-                st.info("💡 **How to use**: Choose an effect type and year, then generate the heatmap to view the top sectors per Product_H category.")
+                available_years = sorted(available_years_all)
+                default_year_index = available_years.index(2030) if 2030 in available_years else 0
 
-                col1, col2, col3 = st.columns(3)
+                treemap_year = st.selectbox(
+                    "📅 Select Year:",
+                    options=available_years,
+                    index=default_year_index,
+                    key="treemap_year"
+                )
 
-                with col1:
-                    heatmap_effect = st.selectbox(
-                        "Effect Type",
-                        options=available_effects,
-                        format_func=lambda x: effect_labels[x],
-                        key="heatmap_effect"
-                    )
+                st.markdown("---")
 
-                available_years = sorted(sheet_results[heatmap_effect].keys())
+                # Define the 4 coefficients matching coal+renewable+H2 value chain table
+                coefficient_configs = [
+                    {
+                        'name': '💰 Indirect Production',
+                        'effects': ['indirect_prod', 'productioncoeff'],
+                        'label': 'Indirect Production (Billion Won)',
+                        'description': 'indirect_prod + productioncoeff (H2)'
+                    },
+                    {
+                        'name': '🌐 Indirect Import',
+                        'effects': ['indirect_import'],
+                        'label': 'Indirect Import (Billion Won)',
+                        'description': 'indirect_import'
+                    },
+                    {
+                        'name': '💎 Value Added',
+                        'effects': ['value_added', 'valueaddedcoeff'],
+                        'label': 'Value Added (Billion Won)',
+                        'description': 'value_added + valueaddedcoeff (H2)'
+                    },
+                    {
+                        'name': '👥 Job Creation',
+                        'effects': ['jobcoeff', 'directemploycoeff'],
+                        'label': 'Job Creation (Persons)',
+                        'description': 'jobcoeff (1610+4506) + directemploycoeff (H2S+H2T)'
+                    }
+                ]
 
-                if not available_years:
-                    st.warning("No yearly data available for the selected effect type.")
-                else:
-                    default_year_index = available_years.index(2030) if 2030 in available_years else 0
+                # Create tabs for 4 coefficients
+                treemap_tabs = st.tabs([config['name'] for config in coefficient_configs])
 
-                    with col2:
-                        heatmap_year = st.selectbox(
-                            "Year",
-                            options=available_years,
-                            index=default_year_index,
-                            key="heatmap_year"
-                        )
+                for tab_idx, config in enumerate(coefficient_configs):
+                    with treemap_tabs[tab_idx]:
+                        st.markdown(f"**{config['label']}**")
+                        st.caption(f"Calculated from: {config['description']}")
 
-                    with col3:
-                        heatmap_top_n = st.slider(
-                            "Top N Sectors per Category",
-                            min_value=5,
-                            max_value=20,
-                            value=10,
-                            step=5,
-                            key="heatmap_top_n"
-                        )
+                        try:
+                            # Special handling for Job Creation (use sub-sector level)
+                            if config['name'] == '👥 Job Creation':
+                                # Collect sub-sector level impacts from sector_impacts
+                                combined_impacts = {}
 
-                    if st.button("🎨 Generate Heatmap", type="primary", key="btn_heatmap"):
-                        with st.spinner("Creating interactive heatmap..."):
-                            try:
-                                year_data = sheet_results[heatmap_effect].get(heatmap_year)
-                                if not year_data:
-                                    st.error(f"No data found for {heatmap_year}.")
-                                else:
-                                    sector_impacts = year_data['sector_impacts']
-                                    if not sector_impacts:
-                                        st.warning("No sector impacts available for visualization.")
-                                    else:
-                                        data_rows = []
-                                        value_column = f"{heatmap_effect}_{heatmap_year}"
+                                for effect_type in config['effects']:
+                                    if effect_type in sheet_results and treemap_year in sheet_results[effect_type]:
+                                        year_data = sheet_results[effect_type][treemap_year]
+                                        sector_impacts = year_data.get('sector_impacts', [])
 
                                         for impact in sector_impacts:
                                             sector_code = str(impact['sector_code'])
                                             sector_name = impact['sector_name']
                                             total_impact = impact['total_impact']
 
-                                            code_h = ''
-                                            product_h = ''
+                                            # Get sub-sector name from subsectormap
                                             if hasattr(scenario_analyzer, 'io_analyzer') and scenario_analyzer.io_analyzer:
-                                                code_h = scenario_analyzer.io_analyzer.basic_to_code_h.get(sector_code, '')
-                                                if code_h:
-                                                    product_h = scenario_analyzer.io_analyzer.code_h_to_product_h.get(code_h, code_h)
+                                                subsector_name = scenario_analyzer.io_analyzer.subsector_to_name.get(sector_code, sector_name)
+                                            else:
+                                                subsector_name = sector_name
 
-                                            if not code_h:
-                                                code_h = sector_code
-                                                product_h = f"H2 Scenario ({sector_code})"
+                                            # For H2 sectors, use Korean names
+                                            if sector_code in ['H2S', 'H2T']:
+                                                h2_names = {'H2S': '수소 저장', 'H2T': '수소 운송'}
+                                                subsector_name = h2_names[sector_code]
 
-                                            data_rows.append({
-                                                'Sector_Code': sector_code,
-                                                'Sector_Name': sector_name,
-                                                'Code_H': code_h,
-                                                'Product_H': product_h,
-                                                value_column: total_impact
-                                            })
+                                            if sector_code not in combined_impacts:
+                                                combined_impacts[sector_code] = {
+                                                    'sector_code': sector_code,
+                                                    'sector_name': subsector_name,
+                                                    'total_impact': 0
+                                                }
+                                            combined_impacts[sector_code]['total_impact'] += total_impact
 
-                                        if not data_rows:
-                                            st.warning("Unable to assemble data for the heatmap.")
-                                        else:
-                                            df = pd.DataFrame(data_rows)
+                                if not combined_impacts:
+                                    st.warning(f"No data available for {config['name']} in year {treemap_year}")
+                                else:
+                                    # Prepare data for treemap (sub-sector level)
+                                    data_rows = []
+                                    value_column = f"{config['name']}_{treemap_year}"
 
-                                            with tempfile.NamedTemporaryFile(delete=False, suffix=".html") as tmp_file:
-                                                output_path = tmp_file.name
+                                    for sector_code, data in combined_impacts.items():
+                                        data_rows.append({
+                                            'Code_H': data['sector_code'],
+                                            'Product_H': data['sector_name'],
+                                            value_column: data['total_impact']
+                                        })
 
-                                            fig = Visualization.plot_code_h_sector_top10_heatmap_plotly(
-                                                df=df,
-                                                effect=heatmap_effect,
-                                                year=heatmap_year,
-                                                top_n=heatmap_top_n,
-                                                output_path=output_path
-                                            )
+                                    if data_rows:
+                                        df = pd.DataFrame(data_rows)
 
-                                            try:
-                                                os.remove(output_path)
-                                            except OSError:
-                                                pass
+                                        with tempfile.NamedTemporaryFile(delete=False, suffix=".html") as tmp_file:
+                                            output_path = tmp_file.name
 
-                                            st.plotly_chart(fig, use_container_width=True)
-                                            st.success(f"✅ Heatmap generated successfully for {heatmap_year}!")
+                                        # Generate treemap
+                                        fig = Visualization.plot_code_h_treemap(
+                                            df=df,
+                                            effect=config['name'],
+                                            year=treemap_year,
+                                            output_path=output_path
+                                        )
 
-                            except Exception as e:
-                                st.error(f"❌ Error generating heatmap: {e}")
-                                st.exception(e)
+                                        try:
+                                            os.remove(output_path)
+                                        except OSError:
+                                            pass
+
+                                        st.plotly_chart(fig, use_container_width=True)
+                                    else:
+                                        st.warning("No data to display")
+
+                            else:
+                                # For other coefficients, use code_h level
+                                combined_impacts = {}
+
+                                for effect_type in config['effects']:
+                                    if effect_type in sheet_results and treemap_year in sheet_results[effect_type]:
+                                        year_data = sheet_results[effect_type][treemap_year]
+                                        code_h_impacts = year_data.get('code_h_impacts', [])
+
+                                        for impact in code_h_impacts:
+                                            code_h = impact['code_h']
+                                            product_h = impact['product_h']
+                                            total_impact = impact['total_impact']
+
+                                            if code_h not in combined_impacts:
+                                                combined_impacts[code_h] = {
+                                                    'code_h': code_h,
+                                                    'product_h': product_h,
+                                                    'total_impact': 0
+                                                }
+                                            combined_impacts[code_h]['total_impact'] += total_impact
+
+                                if not combined_impacts:
+                                    st.warning(f"No data available for {config['name']} in year {treemap_year}")
+                                else:
+                                    # Prepare data for treemap (code_h level)
+                                    data_rows = []
+                                    value_column = f"{config['name']}_{treemap_year}"
+
+                                    for code_h, data in combined_impacts.items():
+                                        data_rows.append({
+                                            'Code_H': data['code_h'],
+                                            'Product_H': data['product_h'] if data['product_h'] else code_h,
+                                            value_column: data['total_impact']
+                                        })
+
+                                    if data_rows:
+                                        df = pd.DataFrame(data_rows)
+
+                                        with tempfile.NamedTemporaryFile(delete=False, suffix=".html") as tmp_file:
+                                            output_path = tmp_file.name
+
+                                        # Generate treemap
+                                        fig = Visualization.plot_code_h_treemap(
+                                            df=df,
+                                            effect=config['name'],
+                                            year=treemap_year,
+                                            output_path=output_path
+                                        )
+
+                                        try:
+                                            os.remove(output_path)
+                                        except OSError:
+                                            pass
+
+                                        st.plotly_chart(fig, use_container_width=True)
+                                    else:
+                                        st.warning("No data to display")
+
+                        except Exception as e:
+                            st.error(f"❌ Error generating treemap: {e}")
+                            st.exception(e)
 
     # TAB 4: Grid Comparison
     with viz_tabs[3]:
