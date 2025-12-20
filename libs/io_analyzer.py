@@ -2,185 +2,135 @@ import pandas as pd
 from typing import Dict
 
 class IOTableAnalyzer:
-    def __init__(self, data_file: str = 'data/iotable_2023.xlsx'):
+    def __init__(self, data_file: str = 'data/iotable_2020.xlsx'):
         """Initialize the I-O Table Analyzer with clean data structure."""
         self.data_file = data_file
         self.mapping = None
         self.codemap = None
         self.subsectormap = None
-        self.coefficients = {}  # Will store A, Am, Ad, job coefficients
-        self.basic_to_subsector = {}  # Mapping from basic sector to sub-sector
-        self.basic_to_subsector_to_code_h = {} #added
-        self.subsector_to_name = {}  # Mapping from sub-sector code to name
+        self.coefficients = {}
+        self.basic_to_subsector = {}
+        self.basic_to_subsector_to_code_h = {}
+        self.subsector_to_name = {}
+        self.code_h_to_product_h = {}
+        self.basic_to_code_h = {}
+        self.code_h_options = {}
+        self.code_to_product = {}
+        self.code_to_product_display = {}
         self.load_data()
-    
-    def load_data(self):
-        """Load mapping and all three coefficient matrices from Excel file."""
-        print("Loading I-O Table data...")
 
+    def load_data(self):
+        """Load mapping and all coefficient matrices from Excel file."""
         def format_code(code):
+            """Format basic sector code to 4-digit string (e.g., '111' -> '0111')."""
             code_str = str(code).strip()
             if code_str.isdigit() and len(code_str) == 3:
                 return f"0{code_str}"
             return code_str
 
         def format_subsector_code(code):
+            """Format sub-sector code to 3-digit string."""
             try:
                 code_int = int(float(code))
                 return f"{code_int:03d}"
             except (ValueError, TypeError):
                 return str(code).strip()
-        
-        # Load mapping sheet
-        self.mapping = pd.read_excel(self.data_file, sheet_name='basicmap')
-        self.mapping['code'] = self.mapping['code'].apply(format_code)
-        print(f"Loaded {len(self.mapping)} sectors from basicmap sheet")
-        
-        # # Load direct input coefficients (A)
-        # df_A = pd.read_excel(self.data_file, sheet_name='directinputcoeff_A')
-        # self.coefficients['A'] = df_A.set_index('code')
-        # print(f"Loaded A (direct) coefficient matrix: {self.coefficients['A'].shape}")
-        
-        # # Load import input coefficients (Am)
-        # df_Am = pd.read_excel(self.data_file, sheet_name='importinputcoeff_Am')
-        # self.coefficients['Am'] = df_Am.set_index('code')
-        # print(f"Loaded Am (import) coefficient matrix: {self.coefficients['Am'].shape}")
-        
-        # # Load domestic coefficients (Ad)
-        # df_Ad = pd.read_excel(self.data_file, sheet_name='domesticinputcoeff_Ad')
-        # # Clean the column name if needed
-        # if 'code' not in df_Ad.columns:
-        #     df_Ad = df_Ad.rename(columns={df_Ad.columns[0]: 'code'})
-        # self.coefficients['Ad'] = df_Ad.set_index('code')
-        # print(f"Loaded Ad (domestic) coefficient matrix: {self.coefficients['Ad'].shape}")
-        
-        # Load indirect production coefficients (I-Ad)^-1
-        df_indirect_prod = pd.read_excel(self.data_file, sheet_name='indirectprodcoeff')
-        self.coefficients['indirect_prod'] = df_indirect_prod.set_index('code')
-        print(f"Loaded indirect production coefficient matrix: {self.coefficients['indirect_prod'].shape}")
-        
-        # Load indirect import coefficients
-        df_indirect_import = pd.read_excel(self.data_file, sheet_name='indirectimportcoeff')
-        self.coefficients['indirect_import'] = df_indirect_import.set_index('code')
-        print(f"Loaded indirect import coefficient matrix: {self.coefficients['indirect_import'].shape}")
-        
-        # Load value-added coefficients
-        df_value_added = pd.read_excel(self.data_file, sheet_name='valueaddedcoeff')
-        self.coefficients['value_added'] = df_value_added.set_index('code')
-        print(f"Loaded value-added coefficient matrix: {self.coefficients['value_added'].shape}")
-        
-        # Load job coefficients (total job creation)
-        df_jobcoeff = pd.read_excel(self.data_file, sheet_name='jobcoeff')
-        self.coefficients['jobcoeff'] = df_jobcoeff.set_index('code')
-        print(f"Loaded job coefficient matrix: {self.coefficients['jobcoeff'].shape}")
-        
-        # Load direct employment coefficients
-        df_directemploy = pd.read_excel(self.data_file, sheet_name='directemploycoeff')
-        self.coefficients['directemploycoeff'] = df_directemploy.set_index('code')
-        print(f"Loaded direct employment coefficient matrix: {self.coefficients['directemploycoeff'].shape}")
-        
-        basic_coeff_sheets = {
-            'indirect_prod': 'indirectprodcoeff',
-            'indirect_import': 'indirectimportcoeff',
-            'value_added': 'valueaddedcoeff'
-        }
 
-        for name, sheet in basic_coeff_sheets.items():
-            df = pd.read_excel(self.data_file, sheet_name=sheet)
-            
-            # (수정 포인트 3) 첫 번째 열(인덱스)의 형식을 통일
-            df = df.rename(columns={df.columns[0]: 'code'})
-            df['code'] = df['code'].apply(format_code)
-            df = df.set_index('code')
-            
-            # (수정 포인트 4) 나머지 모든 열(컬럼)의 형식도 통일
-            df.columns = [format_code(col) for col in df.columns]
-            
-            self.coefficients[name] = df
-            print(f"Loaded {name} coefficient matrix: {df.shape} (formatted)")
+        try:
+            # Load mapping sheet
+            self.mapping = pd.read_excel(self.data_file, sheet_name='basicmap')
+            self.mapping['code'] = self.mapping['code'].apply(format_code)
 
-        job_coeff_sheets = {
-            'jobcoeff': 'jobcoeff',
-            'directemploycoeff': 'directemploycoeff'
-        }
-        for name, sheet in job_coeff_sheets.items():
-            df = pd.read_excel(self.data_file, sheet_name=sheet)
-            df = df.rename(columns={df.columns[0]: 'code'})
-            # 인덱스와 컬럼 모두 3자리 소분류 코드 형식으로 통일
-            df['code'] = df['code'].apply(format_subsector_code)
-            df = df.set_index('code')
-            df.columns = [format_subsector_code(col) for col in df.columns]
-            self.coefficients[name] = df
-            print(f"Loaded {name} coefficient matrix: {df.shape} (sub-sector formatted)")
+            # Define coefficient sheets to load
+            basic_coeff_sheets = {
+                'indirect_prod': 'indirectprodcoeff',
+                'indirect_import': 'indirectimportcoeff',
+                'value_added': 'valueaddedcoeff'
+            }
 
-        # Load codemap for basic-to-subsector mapping
-        self.codemap = pd.read_excel(self.data_file, sheet_name='codemap')
-        print(f"Loaded codemap with {len(self.codemap)} sector mappings")
-        
-        # Load subsectormap for sub-sector names
-        self.subsectormap = pd.read_excel(self.data_file, sheet_name='subsectormap')
-        print(f"Loaded subsectormap with {len(self.subsectormap)} sub-sector names")
+            # Load basic coefficient matrices
+            for name, sheet in basic_coeff_sheets.items():
+                df = pd.read_excel(self.data_file, sheet_name=sheet)
 
-        # Create sub-sector code to name mapping
-        for _, row in self.subsectormap.iterrows():
-            subsector_code = format_subsector_code(row['code'])
-            subsector_name = row['name']
-            self.subsector_to_name[subsector_code] = subsector_name
-        
-        print(f"Created sub-sector-to-name mapping for {len(self.subsector_to_name)} sub-sectors")
-        
-        # Create code_h to product_h mapping
-        self.code_h_to_product_h = {}
-        self.code_h_to_product_h = pd.Series(self.codemap['product_h'].values, index=self.codemap['code_h']).to_dict()
-        print(f"Created code_h_to_product_h mapping with {len(self.code_h_to_product_h)} entries.")
+                # Rename first column to 'code' and format
+                df = df.rename(columns={df.columns[0]: 'code'})
+                df['code'] = df['code'].apply(format_code)
+                df = df.set_index('code')
 
-        # Create basic code to code_h mapping
-        self.basic_to_code_h = {}
-        for _, row in self.codemap.iterrows():
-            basic_code = format_code(row['Basic'])
-            code_h_value = row['code_h']
-            self.basic_to_code_h[basic_code] = code_h_value
-        print(f"Created basic_to_code_h mapping with {len(self.basic_to_code_h)} entries.")
+                # Format column names
+                df.columns = [format_code(col) for col in df.columns]
 
-        # Create display options for code_h
-        unique_code_h = self.codemap[['code_h', 'product_h']].drop_duplicates()
-        self.code_h_options = {row['code_h']: f"{row['code_h']}: {row['product_h']}"
-                               for _, row in unique_code_h.iterrows()}
-        print(f"Created code_h display options with {len(self.code_h_options)} entries.")
+                self.coefficients[name] = df
 
-        # Create basic-to-subsector mapping
-        for _, row in self.codemap.iterrows():
-            basic_code = format_code(row['Basic']) # 4자리 형식 적용
-            subsector_code = format_subsector_code(row['Sub-sector']) # 3자리 형식 적용
-            code_h_value = row['code_h']
-            self.basic_to_subsector[basic_code] = subsector_code
-            self.basic_to_subsector_to_code_h.setdefault(basic_code, {})[subsector_code] = code_h_value
-        
-        print(f"Created basic-to-subsector mapping for {len(self.basic_to_subsector)} sectors")
-        print(f"Created basic-to-subsector-to-code_h mapping for {len(self.basic_to_subsector_to_code_h)} basic sectors")
+            # Load job coefficient matrices (use sub-sector format)
+            job_coeff_sheets = {
+                'jobcoeff': 'jobcoeff',
+                'directemploycoeff': 'directemploycoeff'
+            }
 
-        # Create code-to-product mapping dictionary with proper string formatting
-        self.code_to_product = {}
-        self.code_to_product_display = {}  # For display purposes
-        
-        # Use first coefficient matrix to check column format
-        sample_coeffs = self.coefficients['indirect_prod']
-        
-        self.code_to_product = pd.Series(self.mapping['product'].values, index=self.mapping['code']).to_dict()
-        self.code_to_product_display = {code: f"{code}: {product}" for code, product in self.code_to_product.items()}
-        print(f"Created code_to_product mapping with {len(self.code_to_product)} entries.")
+            for name, sheet in job_coeff_sheets.items():
+                df = pd.read_excel(self.data_file, sheet_name=sheet)
+                df = df.rename(columns={df.columns[0]: 'code'})
 
-        print(f"Final code_to_product mapping size: {len(self.code_to_product)}")
-        if len(self.code_to_product) != 380 and len(self.code_to_product_display) != 411:
-            print("WARNING: Mapping dictionary size is not 380!")
-            # 매핑에 없는 부문 코드 찾기 (고급 디버깅)
-            map_codes = set(self.mapping['code'].astype(str))
-            mapped_keys = set(str(k) for k in self.code_to_product.keys())
-            missing_in_map = map_codes - mapped_keys
-            print(f"Codes in basicmap but missing in final mapping: {missing_in_map}")
+                # Format both index and columns with 3-digit sub-sector codes
+                df['code'] = df['code'].apply(format_subsector_code)
+                df = df.set_index('code')
+                df.columns = [format_subsector_code(col) for col in df.columns]
 
-        #print("Data loading complete!")
-    
+                self.coefficients[name] = df
+
+            # Load codemap for basic-to-subsector mapping
+            self.codemap = pd.read_excel(self.data_file, sheet_name='codemap')
+
+            # Load subsectormap for sub-sector names
+            self.subsectormap = pd.read_excel(self.data_file, sheet_name='subsectormap')
+
+            # Create sub-sector code to name mapping
+            for _, row in self.subsectormap.iterrows():
+                subsector_code = format_subsector_code(row['code'])
+                subsector_name = row['name']
+                self.subsector_to_name[subsector_code] = subsector_name
+
+            # Create code_h to product_h mapping
+            self.code_h_to_product_h = pd.Series(
+                self.codemap['product_h'].values,
+                index=self.codemap['code_h']
+            ).to_dict()
+
+            # Create basic code to code_h mapping
+            for _, row in self.codemap.iterrows():
+                basic_code = format_code(row['Basic'])
+                code_h_value = row['code_h']
+                self.basic_to_code_h[basic_code] = code_h_value
+
+            # Create display options for code_h
+            unique_code_h = self.codemap[['code_h', 'product_h']].drop_duplicates()
+            self.code_h_options = {
+                row['code_h']: f"{row['code_h']}: {row['product_h']}"
+                for _, row in unique_code_h.iterrows()
+            }
+
+            # Create basic-to-subsector mapping
+            for _, row in self.codemap.iterrows():
+                basic_code = format_code(row['Basic'])
+                subsector_code = format_subsector_code(row['Sub-sector'])
+                code_h_value = row['code_h']
+                self.basic_to_subsector[basic_code] = subsector_code
+                self.basic_to_subsector_to_code_h.setdefault(basic_code, {})[subsector_code] = code_h_value
+
+            # Create code-to-product mapping dictionary
+            self.code_to_product = pd.Series(
+                self.mapping['product'].values,
+                index=self.mapping['code']
+            ).to_dict()
+            self.code_to_product_display = {
+                code: f"{code}: {product}"
+                for code, product in self.code_to_product.items()
+            }
+
+        except Exception as e:
+            raise RuntimeError(f"Error loading I-O table data from {self.data_file}: {str(e)}")
+
     def get_sector_options(self, level: str = 'basic') -> Dict:
         """
         Return available sector codes and their products for display.
@@ -195,20 +145,21 @@ class IOTableAnalyzer:
             return self.code_h_options
         else:
             return self.code_to_product_display
-    
+
     def get_sector_from_display(self, display_string: str):
+        """Extract sector code from display string."""
         return display_string.split(":")[0]
-    
+
     def calculate_direct_effects(self, target_sector, demand_change: float, coeff_type: str = 'indirect_prod', quiet: bool = False) -> Dict[str, any]:
         """
         Calculate effects of demand change in target sector using specified coefficient matrix.
-        
+
         Args:
             target_sector: Sector code (string like "0111" or integer like 2711)
-            demand_change: Change in final demand (positive or negative)
+            demand_change: Change in final demand (positive or negative, in million won)
             coeff_type: Type of coefficients to use
             quiet: If True, suppress print output
-            
+
         Returns:
             Dictionary with analysis results
         """
@@ -219,54 +170,50 @@ class IOTableAnalyzer:
             target_sector_int = target_sector
         else:
             target_sector_int = None
-            
+
         # Check both string and integer formats
         if target_sector not in self.code_to_product and target_sector_int not in self.code_to_product:
             raise ValueError(f"Sector {target_sector} not found in data")
-            
+
         # Use the format that exists in the mapping
         if target_sector in self.code_to_product:
             final_target_sector = target_sector
         else:
             final_target_sector = target_sector_int
-        
+
         if coeff_type not in self.coefficients:
             raise ValueError(f"Coefficient type '{coeff_type}' not available. Choose from: {list(self.coefficients.keys())}")
-        
+
         target_product = self.code_to_product[final_target_sector]
         coeff_names = {
-           # 'A': 'Direct Total', 
-            #'Am': 'Direct Import', 
-            #'Ad': 'Direct Domestic',
             'indirect_prod': 'Indirect Production (I-Ad)⁻¹',
             'indirect_import': 'Indirect Import',
             'value_added': 'Value-Added',
             'jobcoeff': 'Total Job Creation',
             'directemploycoeff': 'Direct Employment'
         }
-        
+
         if not quiet:
             print(f"\nAnalyzing {coeff_names[coeff_type]} effects for {final_target_sector}: {target_product}")
-            print(f"Demand change: {demand_change:,.0f}")
+            print(f"Demand change: {demand_change:,.0f} million won")
             print(f"Using coefficient type: {coeff_type} ({coeff_names[coeff_type]})")
-        
+
         # Handle job coefficients which use sub-sector mapping
         if coeff_type in ['jobcoeff', 'directemploycoeff']:
             return self._calculate_job_effects(final_target_sector, demand_change, coeff_type, coeff_names[coeff_type], quiet)
-        
-        # Use final_target_sector for regular coefficients  
+
+        # Use final_target_sector for regular coefficients
         selected_coeffs = self.coefficients[coeff_type]
-        
+
         if final_target_sector not in selected_coeffs.columns:
             raise ValueError(f"Column for sector {final_target_sector} not found in {coeff_type} coefficient matrix")
-        
+
         # Calculate direct effects: coefficient * demand_change
         # Convert from million won to billion won
         direct_impacts = selected_coeffs[final_target_sector] * demand_change / 1000
-        
-        # Remove zero or near-zero impacts and NaN values
-        #significant_impacts = direct_impacts[(abs(direct_impacts) > 1e-6) & pd.notna(direct_impacts)]
+
         significant_impacts = direct_impacts
+
         # Create results with sector names
         results = []
         for sector_code, impact in significant_impacts.items():
@@ -276,13 +223,13 @@ class IOTableAnalyzer:
                     'sector_name': self.code_to_product[sector_code],
                     'impact': impact
                 })
-        
+
         # Sort by absolute impact (descending)
         results.sort(key=lambda x: abs(x['impact']), reverse=True)
-        
+
         # Calculate summary statistics
         total_impact = sum([r['impact'] for r in results])
-        
+
         return {
             'target_sector': final_target_sector,
             'target_product': target_product,
@@ -293,58 +240,57 @@ class IOTableAnalyzer:
             'total_impact': total_impact,
             'num_affected_sectors': len(results)
         }
-    
+
     def display_results(self, results: Dict):
         """Display analysis results in a formatted way."""
         print(f"\n{'='*60}")
         print(f"DIRECT EFFECTS ANALYSIS - {results['coeff_name'].upper()}")
         print(f"{'='*60}")
         print(f"Target Sector: {results['target_sector']} - {results['target_product']}")
-        print(f"Demand Change: {results['demand_change']:,.0f}")
+        print(f"Demand Change: {results['demand_change']:,.0f} million won")
         print(f"Coefficient Type: {results['coeff_type']} ({results['coeff_name']})")
-        print(f"Total Impact: {results['total_impact']:,.2f}")
+        print(f"Total Impact: {results['total_impact']:,.2f} billion won")
         print(f"Affected Sectors: {results['num_affected_sectors']}")
-        
+
         print(f"\n{'Top 20 Impacts:':<60}")
         print(f"{'Code':<6} {'Sector':<35} {'Impact':>15}")
         print("-" * 60)
-        
+
         for impact in results['impacts'][:20]:
             print(f"{impact['sector_code']:<6} {impact['sector_name']:<35} {impact['impact']:>15,.2f}")
-        
+
         if len(results['impacts']) > 20:
             print(f"\n... and {len(results['impacts']) - 20} more sectors with smaller impacts")
-    
+
     def _calculate_job_effects(self, target_sector, demand_change: float, coeff_type: str, coeff_name: str, quiet: bool = False) -> Dict[str, any]:
         """
         Calculate job effects using sub-sector mapping.
         Job coefficients use sub-sector codes, so we need to map basic sector to sub-sector first.
         """
         target_product = self.code_to_product[target_sector]
-        
+
         # Find the sub-sector code for this basic sector
         if target_sector not in self.basic_to_subsector:
             raise ValueError(f"Sub-sector mapping not found for basic sector {target_sector}")
-        
+
         subsector_code = self.basic_to_subsector[target_sector]
-        
+
         if not quiet:
             print(f"Basic sector {target_sector} maps to sub-sector {subsector_code}")
-        
+
         # Get job coefficient matrix
         selected_coeffs = self.coefficients[coeff_type]
-        
+
         # Check if sub-sector column exists in job coefficient matrix
         if subsector_code not in selected_coeffs.columns:
             raise ValueError(f"Sub-sector column {subsector_code} not found in {coeff_type} coefficient matrix")
-        
+
         # Calculate job effects: coefficient * demand_change
         # Note: Job coefficients represent jobs per unit of output, so result is in number of jobs
-        job_impacts = selected_coeffs[subsector_code] * demand_change/1000
-        
-        # Remove zero or near-zero impacts and NaN values
-        #significant_impacts = job_impacts[(abs(job_impacts) > 1e-6) & pd.notna(job_impacts)]
+        job_impacts = selected_coeffs[subsector_code] * demand_change / 1000
+
         significant_impacts = job_impacts
+
         # Create results with sector names (using sub-sector mapping for job results)
         results = []
         for sector_code, impact in significant_impacts.items():
@@ -353,20 +299,20 @@ class IOTableAnalyzer:
             if sector_code in self.subsector_to_name:
                 sector_name = self.subsector_to_name.get(sector_code, f"Sub-sector {sector_code}")
             else:
-                sector_name = f"Sub-sector {sector_code}"  # Fallback if name not found
-            
+                sector_name = f"Sub-sector {sector_code}"
+
             results.append({
                 'sector_code': sector_code,
                 'sector_name': sector_name,
                 'impact': impact
             })
-        
+
         # Sort by absolute impact (descending)
         results.sort(key=lambda x: abs(x['impact']), reverse=True)
-        
+
         # Calculate summary statistics
         total_impact = sum([r['impact'] for r in results])
-        
+
         return {
             'target_sector': target_sector,
             'target_product': target_product,
@@ -435,7 +381,7 @@ class IOTableAnalyzer:
 
         Args:
             target_sector: Sector code (string like "0111" or integer like 2711)
-            demand_change: Change in final demand (positive or negative)
+            demand_change: Change in final demand (positive or negative, in million won)
             coeff_type: Type of coefficients to use
             quiet: If True, suppress print output
 
@@ -454,9 +400,9 @@ class IOTableAnalyzer:
         print(f"CODE_H AGGREGATED EFFECTS - {results['coeff_name'].upper()}")
         print(f"{'='*70}")
         print(f"Target Sector: {results['target_sector']} - {results['target_product']}")
-        print(f"Demand Change: {results['demand_change']:,.0f}")
+        print(f"Demand Change: {results['demand_change']:,.0f} million won")
         print(f"Coefficient Type: {results['coeff_type']} ({results['coeff_name']})")
-        print(f"Total Impact: {results['total_impact']:,.2f}")
+        print(f"Total Impact: {results['total_impact']:,.2f} billion won")
         print(f"Affected Categories: {results['num_affected_categories']}")
 
         print(f"\n{'All Categories:':<70}")
@@ -472,8 +418,8 @@ class IOTableAnalyzer:
 
         Args:
             selected_sector: Sector code (string like "0111" or integer like 2711)
-            demand_change: Change in final demand (positive or negative)
-            quiet: If True, suppress print output (default True for GUI use)
+            demand_change: Change in final demand (positive or negative, in million won)
+            quiet: If True, suppress print output (default True)
 
         Returns:
             Tuple of (all_results, coefficient_types, coeff_names)
@@ -529,8 +475,8 @@ class IOTableAnalyzer:
                 for impact in results['impacts']:
                     # Get code_h and product_h if available
                     sector_code = impact['sector_code']
-                    code_h = self.basic_to_code_h.get(sector_code, '') if hasattr(self, 'basic_to_code_h') else ''
-                    product_h = self.code_h_to_product_h.get(code_h, '') if code_h and hasattr(self, 'code_h_to_product_h') else ''
+                    code_h = self.basic_to_code_h.get(sector_code, '')
+                    product_h = self.code_h_to_product_h.get(code_h, '') if code_h else ''
 
                     combined_data.append({
                         'coefficient_type': coeff_type,
@@ -543,6 +489,288 @@ class IOTableAnalyzer:
                     })
 
         return combined_data
+
+    def calculate_linkages(self, sector_code: str = None) -> Dict:
+        """
+        Calculate backward and forward linkages for a sector or all sectors.
+
+        Backward linkage: How much a sector depends on other sectors as suppliers
+        Forward linkage: How much other sectors depend on this sector as supplier
+
+        Values > 1.0 indicate above-average linkage effects
+
+        Args:
+            sector_code: Sector code (if None, calculates for all sectors)
+
+        Returns:
+            Dictionary with backward and forward linkage values
+        """
+        import numpy as np
+
+        # Get indirect production coefficient matrix (Leontief inverse)
+        leontief = self.coefficients['indirect_prod']
+        n = len(leontief)
+
+        # Calculate column sums (backward linkage) - how much each sector demands from all sectors
+        backward_linkages = leontief.sum(axis=0)
+        avg_backward = backward_linkages.mean()
+
+        # Calculate row sums (forward linkage) - how much each sector supplies to all sectors
+        forward_linkages = leontief.sum(axis=1)
+        avg_forward = forward_linkages.mean()
+
+        if sector_code:
+            # Convert sector code format
+            if isinstance(sector_code, str) and sector_code.isdigit():
+                sector_int = int(sector_code)
+                sector_code = f"0{sector_int}" if sector_int < 1000 else str(sector_int)
+
+            if sector_code not in self.code_to_product:
+                raise ValueError(f"Sector {sector_code} not found")
+
+            return {
+                'sector_code': sector_code,
+                'sector_name': self.code_to_product[sector_code],
+                'backward_linkage': backward_linkages[sector_code],
+                'forward_linkage': forward_linkages[sector_code],
+                'backward_normalized': backward_linkages[sector_code] / avg_backward,
+                'forward_normalized': forward_linkages[sector_code] / avg_forward,
+                'is_key_sector': (backward_linkages[sector_code] / avg_backward > 1.0 and
+                                 forward_linkages[sector_code] / avg_forward > 1.0)
+            }
+        else:
+            # Return for all sectors
+            results = []
+            for code in leontief.columns:
+                if code in self.code_to_product:
+                    backward_norm = backward_linkages[code] / avg_backward
+                    forward_norm = forward_linkages[code] / avg_forward
+                    results.append({
+                        'sector_code': code,
+                        'sector_name': self.code_to_product[code],
+                        'backward_linkage': backward_linkages[code],
+                        'forward_linkage': forward_linkages[code],
+                        'backward_normalized': backward_norm,
+                        'forward_normalized': forward_norm,
+                        'is_key_sector': (backward_norm > 1.0 and forward_norm > 1.0)
+                    })
+
+            return {
+                'sectors': results,
+                'avg_backward': avg_backward,
+                'avg_forward': avg_forward
+            }
+
+    def calculate_multipliers(self, sector_code: str) -> Dict:
+        """
+        Calculate output, value-added, and employment multipliers.
+
+        Multipliers show total impact per unit of final demand change.
+
+        Args:
+            sector_code: Sector code
+
+        Returns:
+            Dictionary with multiplier values
+        """
+        # Convert sector code format
+        if isinstance(sector_code, str) and sector_code.isdigit():
+            sector_int = int(sector_code)
+            sector_code = f"0{sector_int}" if sector_int < 1000 else str(sector_int)
+
+        if sector_code not in self.code_to_product:
+            raise ValueError(f"Sector {sector_code} not found")
+
+        # Output multiplier: sum of column in Leontief inverse
+        leontief = self.coefficients['indirect_prod']
+        output_multiplier = leontief[sector_code].sum()
+
+        # Value-added multiplier: sum of value-added coefficients weighted by Leontief inverse
+        value_added_coeffs = self.coefficients['value_added']
+        value_added_multiplier = (value_added_coeffs[sector_code] * leontief[sector_code]).sum()
+
+        # Employment multiplier (if using job coefficients)
+        subsector_code = self.basic_to_subsector.get(sector_code)
+        if subsector_code and subsector_code in self.coefficients['jobcoeff'].columns:
+            job_coeffs = self.coefficients['jobcoeff']
+            employment_multiplier = job_coeffs[subsector_code].sum()
+        else:
+            employment_multiplier = None
+
+        return {
+            'sector_code': sector_code,
+            'sector_name': self.code_to_product[sector_code],
+            'output_multiplier': output_multiplier,
+            'value_added_multiplier': value_added_multiplier,
+            'employment_multiplier': employment_multiplier,
+            'interpretation': {
+                'output': f"1 billion won increase → {output_multiplier:.2f} billion won total output",
+                'value_added': f"1 billion won increase → {value_added_multiplier:.2f} billion won value added",
+                'employment': f"1 billion won increase → {employment_multiplier:.2f} jobs" if employment_multiplier else "N/A"
+            }
+        }
+
+    def compare_sectors(self, sector_codes: list, demand_change: float, coeff_type: str = 'indirect_prod') -> Dict:
+        """
+        Compare multiple sectors side-by-side.
+
+        Args:
+            sector_codes: List of sector codes to compare
+            demand_change: Demand change amount (same for all sectors)
+            coeff_type: Coefficient type to analyze
+
+        Returns:
+            Dictionary with comparison results
+        """
+        comparison_results = []
+
+        for sector_code in sector_codes:
+            try:
+                results = self.calculate_direct_effects(sector_code, demand_change, coeff_type, quiet=True)
+                comparison_results.append({
+                    'sector_code': results['target_sector'],
+                    'sector_name': results['target_product'],
+                    'total_impact': results['total_impact'],
+                    'num_affected_sectors': results['num_affected_sectors'],
+                    'top_5_impacts': results['impacts'][:5]
+                })
+            except Exception as e:
+                comparison_results.append({
+                    'sector_code': sector_code,
+                    'sector_name': 'Error',
+                    'total_impact': 0,
+                    'error': str(e)
+                })
+
+        # Sort by total impact
+        comparison_results.sort(key=lambda x: abs(x.get('total_impact', 0)), reverse=True)
+
+        return {
+            'demand_change': demand_change,
+            'coeff_type': coeff_type,
+            'sectors': comparison_results
+        }
+
+    def export_results(self, results: Dict, filename: str, format: str = 'xlsx'):
+        """
+        Export analysis results to file.
+
+        Args:
+            results: Results dictionary from calculate_direct_effects
+            filename: Output filename (without extension)
+            format: 'xlsx' or 'csv'
+        """
+        import pandas as pd
+
+        # Create DataFrame from impacts
+        df = pd.DataFrame(results['impacts'])
+
+        # Add metadata sheet/header
+        metadata = {
+            'Target Sector': results['target_sector'],
+            'Target Product': results['target_product'],
+            'Demand Change (Million Won)': results['demand_change'],
+            'Coefficient Type': results['coeff_type'],
+            'Total Impact (Billion Won)': results['total_impact'],
+            'Affected Sectors': results['num_affected_sectors']
+        }
+
+        if format == 'xlsx':
+            with pd.ExcelWriter(f"{filename}.xlsx", engine='openpyxl') as writer:
+                # Write metadata
+                pd.DataFrame([metadata]).T.to_excel(writer, sheet_name='Metadata', header=False)
+                # Write impacts
+                df.to_excel(writer, sheet_name='Impacts', index=False)
+        else:
+            # For CSV, write metadata as header comments
+            with open(f"{filename}.csv", 'w') as f:
+                for key, value in metadata.items():
+                    f.write(f"# {key}: {value}\n")
+                f.write("\n")
+            df.to_csv(f"{filename}.csv", mode='a', index=False)
+
+    def identify_key_sectors(self, threshold: float = 1.0) -> Dict:
+        """
+        Identify key sectors with high backward AND forward linkages.
+
+        Key sectors have above-average linkages in both directions,
+        meaning they have the biggest ripple effects in the economy.
+
+        Args:
+            threshold: Normalized linkage threshold (default 1.0 = average)
+
+        Returns:
+            Dictionary with key sectors and their linkages
+        """
+        all_linkages = self.calculate_linkages()
+
+        key_sectors = []
+        backward_only = []
+        forward_only = []
+        weak_linkage = []
+
+        for sector in all_linkages['sectors']:
+            backward_norm = sector['backward_normalized']
+            forward_norm = sector['forward_normalized']
+
+            if backward_norm > threshold and forward_norm > threshold:
+                key_sectors.append(sector)
+            elif backward_norm > threshold:
+                backward_only.append(sector)
+            elif forward_norm > threshold:
+                forward_only.append(sector)
+            else:
+                weak_linkage.append(sector)
+
+        # Sort each category by combined linkage strength
+        key_sectors.sort(key=lambda x: x['backward_normalized'] + x['forward_normalized'], reverse=True)
+        backward_only.sort(key=lambda x: x['backward_normalized'], reverse=True)
+        forward_only.sort(key=lambda x: x['forward_normalized'], reverse=True)
+
+        return {
+            'key_sectors': key_sectors,  # High backward AND forward
+            'backward_only': backward_only,  # High backward, low forward
+            'forward_only': forward_only,  # Low backward, high forward
+            'weak_linkage': weak_linkage,  # Low in both
+            'threshold': threshold,
+            'summary': {
+                'key_sectors_count': len(key_sectors),
+                'backward_only_count': len(backward_only),
+                'forward_only_count': len(forward_only),
+                'weak_linkage_count': len(weak_linkage)
+            }
+        }
+
+    def sensitivity_analysis(self, sector_code: str, demand_changes: list, coeff_type: str = 'indirect_prod') -> Dict:
+        """
+        Test multiple demand change scenarios to see how effects scale.
+
+        Args:
+            sector_code: Sector code to analyze
+            demand_changes: List of demand change values to test
+            coeff_type: Coefficient type to use
+
+        Returns:
+            Dictionary with results for each scenario
+        """
+        scenarios = []
+
+        for demand_change in demand_changes:
+            results = self.calculate_direct_effects(sector_code, demand_change, coeff_type, quiet=True)
+            scenarios.append({
+                'demand_change': demand_change,
+                'total_impact': results['total_impact'],
+                'num_affected_sectors': results['num_affected_sectors'],
+                'impact_ratio': results['total_impact'] / (demand_change / 1000) if demand_change != 0 else 0,
+                'top_3_sectors': results['impacts'][:3]
+            })
+
+        return {
+            'sector_code': sector_code,
+            'sector_name': self.code_to_product[sector_code],
+            'coeff_type': coeff_type,
+            'scenarios': scenarios
+        }
 
 if __name__ == "__main__":
     analyzer = IOTableAnalyzer()
@@ -572,11 +800,11 @@ if __name__ == "__main__":
     print("TEST: create_combined_data()")
     print("="*70)
     combined_data = analyzer.create_combined_data(all_results, coefficient_types, coeff_names)
-    # Print header
+
     if combined_data:
         print(f"{'CoeffType':<18} {'CoeffName':<18} {'SectorCode':<10} {'SectorName':<30} {'Code_H':<8} {'Product_H':<16} {'Impact':>12}")
         print("-" * 110)
-        for row in combined_data[:10]:  # Only show up to 10 rows for brevity
+        for row in combined_data[:10]:
             print(f"{row['coefficient_type']:<18} {row['coefficient_name']:<18} {row['sector_code']:<10} {row['sector_name']:<30} {row['code_h']:<8} {row['product_h']:<16} {row['impact']:>12,.2f}")
         if len(combined_data) > 10:
             print(f"... ({len(combined_data)} total rows)")
